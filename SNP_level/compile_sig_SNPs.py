@@ -65,20 +65,20 @@ def compile_significant_snps(input_dir, variant_info, output_dir, hwe_sig=1e-6, 
                         var_dict[vid]["sig_add_traits"].append(phen_code)
                         var_dict[vid]["add_pvals"][phen_code] = row['pval']
                         var_dict[vid]["add_betas"][phen_code] = row['beta']
-                    
-                    if status == 2: # Over dominance
-                        var_dict[vid]["sig_over_dom_traits"].append(phen_code)
-                        var_dict[vid]["over_dom_pvals"][phen_code] = row['dominance_pval']
-                        var_dict[vid]["over_dom_betas"][phen_code] = row['dominance_beta']
 
-                    if status == 3: # Both dominance & additive
+                    if status > 1: # Both dominance & additive
                         var_dict[vid]["sig_add_traits"].append(phen_code)
                         var_dict[vid]["add_pvals"][phen_code] = row['pval']
                         var_dict[vid]["add_betas"][phen_code] = row['beta']
-                        
+        
                         var_dict[vid]["sig_dom_traits"].append(phen_code)
                         var_dict[vid]["dom_pvals"][phen_code] = row['dominance_pval']
                         var_dict[vid]["dom_betas"][phen_code] = row['dominance_beta']
+
+                        if status == 2: # Over dominance
+                            var_dict[vid]["sig_over_dom_traits"].append(phen_code)
+                            var_dict[vid]["over_dom_pvals"][phen_code] = row['dominance_pval']
+                            var_dict[vid]["over_dom_betas"][phen_code] = row['dominance_beta']
             
             # Set variant as the index for fast multi-file merging
             df = df[['variant', phen_code]].copy()
@@ -102,7 +102,7 @@ def compile_significant_snps(input_dir, variant_info, output_dir, hwe_sig=1e-6, 
     # 4. Calculate total significant counts for additive and dominance across all phenotypes
     pheno_cols = [c for c in merged_matrix.columns if c != 'variant']
     merged_matrix['add_sig_total'] = merged_matrix[pheno_cols].isin([1, 3]).sum(axis=1)
-    merged_matrix['dom_sig_total'] = (merged_matrix[pheno_cols] == 3).sum(axis=1)
+    merged_matrix['dom_sig_total'] = merged_matrix[pheno_cols].isin([2, 3]).sum(axis=1)
     merged_matrix['over_dom_sig_total'] = (merged_matrix[pheno_cols] == 2).sum(axis=1)
     print(f"Final matrix shape after merging: {merged_matrix.shape}.")
 

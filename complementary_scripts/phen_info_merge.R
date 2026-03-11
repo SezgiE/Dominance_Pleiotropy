@@ -5,7 +5,7 @@ library(viridis)
 library(scales)
 library(openxlsx)
 
-rm(list = setdiff(ls(all.names = TRUE), c("all_sig_df", "clumped_df")))
+rm(list = setdiff(ls(all.names = TRUE), c("all_sig_df")))
 
 #  Load the data 
 all_sig_path <- "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/significant_SNPs/all_sig_SNPs.tsv.gz"
@@ -31,7 +31,7 @@ unique_traits <- all_sig_df %>%
 
 
 phen_info_Neale <- fread("/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/all_phenotypes_info.tsv.gz")
-phen_info_UKB <- fread("/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/UKB_info.tsv", select = c("field_id", "main_category", "title"))
+phen_info_UKB <- fread("/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/UKB_info.tsv", select = c("field_id", "main_category"))
 phen_domains <- fread("/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/UKB_domains.tsv", select = c("category_id", "title"))
 
 phen_info_filtered <- unique_traits %>%
@@ -43,7 +43,7 @@ phen_info_filtered <- phen_info_filtered %>%
   left_join(
     phen_info_UKB %>% mutate(field_id = as.character(field_id)), 
     by = "field_id"
-  )
+  ) 
 
 phen_info <- phen_info_filtered %>%
   left_join(

@@ -3,6 +3,7 @@ import textwrap
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import matplotlib.patches as patches
 from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
@@ -158,7 +159,7 @@ def plot_manhattan(merged_df, out_dir):
         'pdf.fonttype': 42
     })
 
-    fig, ax = plt.subplots(figsize=(7.2, 4), dpi=300)
+    fig, ax = plt.subplots(figsize=(8, 4), dpi=600)
 
     # 3. Plotting
     colors = ['#808080', '#87CEEB'] # Grey and Skyblue
@@ -201,6 +202,68 @@ def plot_manhattan(merged_df, out_dir):
     plt.savefig(output_file, dpi=600, bbox_inches='tight', transparent=False)
     plt.close()
     print(f"Manhattan plot saved to: {output_file}")
+
+
+def plot_desc_percentages(desc_file_path, out_dir):
+    df = pd.read_excel(desc_file_path)
+
+    total_QCed = df.loc[df['chr'] == 'Total', 'QCed variants'].values[0]
+
+    plot_df = df[(df['chr'] != 'Total') & (df['chr'] != 'X')].copy()
+    
+    # Calculate percentages
+    all_cols = ['add_sig', 'add_pleiotropy', 'dom_sig', 'dom_pleiotropy', 'dom_pleiotropy_category']
+    for col in all_cols:
+        plot_df[f'{col}_pct'] = (plot_df[col] / plot_df['QCed variants']) * 100
+        
+    # Setup subplots: 2 rows, 1 column, shared X-axis
+    plt.rcParams.update({
+        'font.family': 'sans-serif', 'font.sans-serif': ['Arial', 'Helvetica'],
+        'font.size': 10, 'axes.linewidth': 0.5, 'pdf.fonttype': 42
+    })
+        
+    fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, figsize=(14, 8), sharex=True, gridspec_kw={'height_ratios': [1, 1]})
+    fig.subplots_adjust(hspace=0.25) # Close the gap between plots
+    
+    x = np.arange(len(plot_df['chr']))
+    width = 0.3 # Wider bars since we are splitting them up
+    
+    # --- PANEL A: Additive (Top) ---
+    ax1.bar(x - width/2, plot_df['add_sig_pct'], width, label='Add. Sig.', color="#3C5488", edgecolor='black', linewidth=0.5)
+    ax1.bar(x + width/2, plot_df['add_pleiotropy_pct'], width, label='Add. Pleiotropy', color="#DC0000", edgecolor='black', linewidth=0.5)
+    
+    ax1.set_ylabel('Variants (%)')
+    ax1.spines[['top', 'right']].set_visible(False)
+    ax1.legend(frameon=False, bbox_to_anchor=(1.01, 1), loc='upper left')
+    
+    # Optional: Annotate N= total on the top plot
+    text_y = ax1.get_ylim()[1] * 1.05
+    ax1.vlines(x, ymin=0, ymax=text_y, colors='gray', linestyles='dashed', linewidth=0.5, alpha=0.5, zorder=0)
+    for pos, n in zip(x, plot_df['QCed variants']):
+        ax1.text(pos, text_y, f"N={n:,}", ha='center', va='bottom', fontsize=8, rotation=45)
+
+    # --- PANEL B: Dominant (Bottom) ---
+    width_dom = 0.2
+    dom_max = plot_df[['dom_sig_pct', 'dom_pleiotropy_pct', 'dom_pleiotropy_category_pct']].max().max() + 0.02
+    ax2.bar(x - width_dom, plot_df['dom_sig_pct'], width_dom, label='Dom. Sig.', color="#00A087", edgecolor='black', linewidth=0.5)
+    ax2.bar(x, plot_df['dom_pleiotropy_pct'], width_dom, label='Dom. Pleiotropy', color="#B09C85", edgecolor='black', linewidth=0.5)
+    ax2.bar(x + width_dom, plot_df['dom_pleiotropy_category_pct'], width_dom, label='Dom. Pleio. Category', color="#8491B4", edgecolor='black', linewidth=0.5)
+    ax2.vlines(x, ymin=0, ymax=dom_max, colors='gray', linestyles='dashed', linewidth=0.5, alpha=0.5, zorder=0)
+    
+    # Titles
+    ax1.set_title("A. Additive variants", loc='left', fontweight='bold', fontsize=12, pad=40)
+    ax2.set_title("B. Dominance variants", loc='left', fontweight='bold', fontsize=12, pad= 15)
+
+    ax2.set_ylabel('Variants (%)')
+    ax2.set_xlabel('Chromosome')
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(plot_df['chr'])
+    ax2.spines[['top', 'right']].set_visible(False)
+    ax2.legend(frameon=False, bbox_to_anchor=(1.01, 1), loc='upper left')
+    
+    plot_path = f"{out_dir}/desc_plot.png"
+    plt.savefig(plot_path, dpi=600, bbox_inches='tight')
+    plt.close()
 
 
 def plot_pleiotropy_matrix(merged_df, phen_names, out_dir, chromosomes=list(range(1, 23)), bin_size=1_000_000):
@@ -359,18 +422,17 @@ def plot_pleiotropy_matrix(merged_df, phen_names, out_dir, chromosomes=list(rang
     #create a color palette for categories
     # 1. Replace the plt.cm.get_cmap('tab10') lines with this custom hex palette
     unique_categories = unique_traits_df['category'].unique()
+    custom_palette = ["#3C5488", '#DC0000','#00A087',"#89603D",'#8491B4', '#91D1C2',"#F39B7F",
+                       '#631879',"#B09C85",'#00A05B','#4DBBD5',"#C59316","#E64B35"]
     
-    # Elegant, high-contrast qualitative palette
-    custom_palette = ['#E64B35', '#4DBBD5', '#00A087', '#3C5488', '#F39B7F', 
-                      '#8491B4', '#91D1C2', '#DC0000', '#7E6148', '#B09C85']
+    # 3. Apply the 70% opacity to all colors at once
+    new_palette = [mcolors.to_rgba(c, alpha=1) for c in custom_palette]
     
-    custom_palette = ['#00A05B', "#C59316", '#4DBBD5', '#E64B35', '#631879', 
-                      '#91D1C2', '#8491B4', "#89603D", '#00A087', '#DC0000', "#3C5488"]
+    # 4. Reverse the categories so the first color applies to the visual top of the plot
+    top_to_bottom_cats = list(reversed(unique_categories))
     
-
-    
-    # Map the colors, looping back to the start if you have more than 10 categories
-    category_color_dict = {cat: custom_palette[i % len(custom_palette)] for i, cat in enumerate(unique_categories)}
+    # 5. Map them together safely (the % len(new_palette) ensures it loops if you have >11 categories)
+    category_color_dict = {cat: new_palette[i % len(new_palette)] for i, cat in enumerate(top_to_bottom_cats)}
 
     # Format X-axis with Chromosome Centers
     ax_bottom.set_xlim(0, df['BPcum'].max())
@@ -418,7 +480,7 @@ def plot_pleiotropy_matrix(merged_df, phen_names, out_dir, chromosomes=list(rang
                        for cat in visual_order_categories]
     
     
-    ax_bottom.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1.03, 0.95), 
+    ax_bottom.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1.03, 0.98), 
                      ncol=1, fontsize=7, frameon=False, labelspacing=1.1,
                      title="Trait Categories", title_fontproperties={'weight': 'bold', 'size': 7})
 
@@ -431,15 +493,18 @@ def plot_pleiotropy_matrix(merged_df, phen_names, out_dir, chromosomes=list(rang
 
 if __name__ == "__main__":
    
-    data_path = "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/significant_SNPs/all_sig_SNPs.tsv.gz"
+    sig_SNPs_path = "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/significant_SNPs/all_sig_SNPs.tsv.gz"
     output_dir = "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/results"
     phen_names = "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/phen_dict_renamed.xlsx"
-    
-    merged_df = pd.read_csv(data_path, sep="\t", compression="gzip", 
+    desc_file_path = "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/results/SNP_descriptives_plotting.xlsx"
+
+
+    sig_SNPs_df = pd.read_csv(sig_SNPs_path, sep="\t", compression="gzip", 
                             usecols=["variant", "chr", "pos", 
                                      "dom_sig_total", "sig_dom_traits"],
                                      dtype={"sig_dom_traits": str})
     
-    #plot_manhattan(merged_df, output_dir)
-    #plot_chromosome_density(merged_df, output_dir)
-    plot_pleiotropy_matrix(merged_df, phen_names, output_dir)
+    plot_manhattan(sig_SNPs_df, output_dir)
+    #plot_chromosome_density(sig_SNPs_df, output_dir)
+    #plot_pleiotropy_matrix(sig_SNPs_df, phen_names, output_dir)
+    #plot_desc_percentages(desc_file_path, output_dir)
