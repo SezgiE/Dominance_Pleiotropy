@@ -16,10 +16,13 @@ def compile_significant_snps(input_dir, variant_info, output_dir, hwe_sig=1e-6, 
     var_dict = collections.defaultdict(lambda: {
         "sig_add_traits": [],
         "sig_dom_traits": [],
+        "sig_over_dom_traits": [],
         "add_betas": {},
         "dom_betas": {},
+        "over_dom_betas": {},
         "add_pvals": {},
-        "dom_pvals": {}
+        "dom_pvals": {},
+        "over_dom_pvals": {},
     })
 
     print(f"Found {len(all_files)} files. Extracting 'variant' and the last column...")
@@ -57,15 +60,25 @@ def compile_significant_snps(input_dir, variant_info, output_dir, hwe_sig=1e-6, 
                 
                 # Only store metrics if the variant is significant in this trait (1 or 2)
                 if status > 0:
-                    var_dict[vid]["sig_add_traits"].append(phen_code)
-                    var_dict[vid]["add_pvals"][phen_code] = row['pval']
-                    var_dict[vid]["add_betas"][phen_code] = row['beta']
+
+                    if status == 1: # Only additive
+                        var_dict[vid]["sig_add_traits"].append(phen_code)
+                        var_dict[vid]["add_pvals"][phen_code] = row['pval']
+                        var_dict[vid]["add_betas"][phen_code] = row['beta']
                     
-                    if status == 2: # Both dominance & additive
+                    if status == 2: # Over dominance
+                        var_dict[vid]["sig_over_dom_traits"].append(phen_code)
+                        var_dict[vid]["over_dom_pvals"][phen_code] = row['dominance_pval']
+                        var_dict[vid]["over_dom_betas"][phen_code] = row['dominance_beta']
+
+                    if status == 3: # Both dominance & additive
+                        var_dict[vid]["sig_add_traits"].append(phen_code)
+                        var_dict[vid]["add_pvals"][phen_code] = row['pval']
+                        var_dict[vid]["add_betas"][phen_code] = row['beta']
+                        
                         var_dict[vid]["sig_dom_traits"].append(phen_code)
                         var_dict[vid]["dom_pvals"][phen_code] = row['dominance_pval']
                         var_dict[vid]["dom_betas"][phen_code] = row['dominance_beta']
-
             
             # Set variant as the index for fast multi-file merging
             df = df[['variant', phen_code]].copy()
@@ -88,8 +101,9 @@ def compile_significant_snps(input_dir, variant_info, output_dir, hwe_sig=1e-6, 
 
     # 4. Calculate total significant counts for additive and dominance across all phenotypes
     pheno_cols = [c for c in merged_matrix.columns if c != 'variant']
-    merged_matrix['add_sig_total'] = merged_matrix[pheno_cols].isin([1, 2]).sum(axis=1)
-    merged_matrix['dom_sig_total'] = (merged_matrix[pheno_cols] == 2).sum(axis=1)
+    merged_matrix['add_sig_total'] = merged_matrix[pheno_cols].isin([1, 3]).sum(axis=1)
+    merged_matrix['dom_sig_total'] = (merged_matrix[pheno_cols] == 3).sum(axis=1)
+    merged_matrix['over_dom_sig_total'] = (merged_matrix[pheno_cols] == 2).sum(axis=1)
     print(f"Final matrix shape after merging: {merged_matrix.shape}.")
 
     # Convert the dictionary to a DataFrame and append to merged_matrix
@@ -100,17 +114,21 @@ def compile_significant_snps(input_dir, variant_info, output_dir, hwe_sig=1e-6, 
             "variant": vid,
             "sig_add_traits": ", ".join(data["sig_add_traits"]),
             "sig_dom_traits": ", ".join(data["sig_dom_traits"]),
+            "sig_over_dom_traits": ", ".join(data["sig_over_dom_traits"]),
+            
             "add_betas": json.dumps(data["add_betas"]),
             "dom_betas": json.dumps(data["dom_betas"]),
+            "over_dom_betas": json.dumps(data["over_dom_betas"]),
+            
             "add_pvals": json.dumps(data["add_pvals"]),
-            "dom_pvals": json.dumps(data["dom_pvals"])
+            "dom_pvals": json.dumps(data["dom_pvals"]),
+            "over_dom_pvals": json.dumps(data["over_dom_pvals"])
         })
 
     dict_df = pd.DataFrame(dict_rows)
     
     # Merge the new columns onto your existing wide matrix
     merged_matrix = merged_matrix.merge(dict_df, on='variant', how='left')
-    print(merged_matrix.head())
 
     # 5. Read the variant info to get chr, rsID, info, and minor_AF for each variant
     print("Reading variant information for filtering...")
@@ -150,19 +168,27 @@ def compile_significant_snps(input_dir, variant_info, output_dir, hwe_sig=1e-6, 
     print("Merging variant annotations back to the significance matrix...")
     merged_matrix = merged_matrix.merge(var_filtered_IND_DIAL, on='variant', how='inner')
 
+    lead_cols = ["variant", "rsid", "chr", "pos", "minor_AF", "info", "p_hwe", "add_sig_total", 
+                 "dom_sig_total", "over_dom_sig_total", "sig_add_traits", "sig_dom_traits", 
+                 "sig_over_dom_traits", "add_betas", "dom_betas", "over_dom_betas",       
+                 "add_pvals", "dom_pvals", "over_dom_pvals"]
+    
+    remaining_cols = [c for c in merged_matrix.columns if c not in lead_cols]
+
+    output_matrix = merged_matrix[lead_cols + remaining_cols]
 
     # 8. Save the final output
     output_all = f"{output_dir}/all_sig_SNPs.tsv.gz"
-    print(f"Saving {len(merged_matrix)} high-quality unique SNPs to {output_all}...")
-    merged_matrix.to_csv(output_all, sep='\t', index=False, compression='gzip')
+    print(f"Saving {len(output_matrix)} high-quality unique SNPs to {output_all}...")
+    output_matrix.to_csv(output_all, sep='\t', index=False, compression='gzip')
     print("Done!")
 
 
 if __name__ == "__main__":
 
 # Path setup
-    input_dir = "/Users/sezgi/Documents/overlapped_SNPs/significant_SNPs/sig_sumstats_merged"
-    variant_info = "/Users/sezgi/Documents/overlapped_SNPs/UKB_sumstats_Neale/variants.tsv.bgz"
-    output_dir = "/Users/sezgi/Documents/overlapped_SNPs/significant_SNPs"
+    input_dir = "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/significant_SNPs/sig_sumstats_merged"
+    variant_info = "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/variants.tsv.bgz"
+    output_dir = "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/significant_SNPs"
 
     compile_significant_snps(input_dir, variant_info, output_dir)

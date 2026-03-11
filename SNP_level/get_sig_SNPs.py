@@ -112,10 +112,10 @@ def preprocess_sumstats(file_add, file_dom, file_out, code, maf_threshold, p_thr
     print(f"5. Filtering for genome-wide significant SNPs based on  p-value threshold of {p_threshold}...")
     # Assess significance based on p-value thresholds for both additive and dominance
     data_merged["add_sig"] = np.where(data_merged["pval"] < p_threshold, 1, 0)
-    data_merged["dom_sig"] = np.where(data_merged["dominance_pval"] < p_threshold, 1, 0)
+    data_merged["dom_sig"] = np.where(data_merged["dominance_pval"] < p_threshold, 2, 0)
 
     # Filter for SNPs that are significant in additive
-    data_out = data_merged[(data_merged["add_sig"] == 1)].copy()
+    data_out = data_merged[(data_merged["add_sig"] != 0) | (data_merged["dom_sig"] != 0)].copy()
     data_out[str(code)] = data_out["add_sig"] + data_out["dom_sig"]
 
     # Write to a gzipped file
@@ -195,7 +195,7 @@ if __name__ == "__main__":
     p_threshold = float(sys.argv[4])  # Grab the p-value threshold from bash
     
     if p_threshold is None:
-        p_threshold = 5e-8  # Default to genome-wide significance if not provided
+        p_threshold = (5e-8)/1060  # Default corrected
 
     # Get the directory where the script is located
     base_dir = Path(__file__).resolve().parent.parent

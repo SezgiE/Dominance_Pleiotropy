@@ -1,4 +1,5 @@
 import os
+import textwrap
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -204,8 +205,9 @@ def plot_manhattan(merged_df, out_dir):
 
 def plot_pleiotropy_matrix(merged_df, phen_names, out_dir, chromosomes=list(range(1, 23)), bin_size=1_000_000):
     print("1. Loading trait dictionary...")
-    names_list = pd.read_excel(phen_names)
-    trait_dict = dict(zip(names_list['phenotype_code'].astype(str), names_list['description']))
+    names_list = pd.read_excel(phen_names, usecols=["phen_code", "description", "category"])
+    trait_dict = dict(zip(names_list['phen_code'].astype(str), names_list['description']))
+    category_dict = dict(zip(names_list['description'], names_list['category']))
     
     print(f"2. Preparing data for {len(chromosomes)} chromosomes...")
     df = merged_df[merged_df['chr'].isin(chromosomes)].copy()
@@ -257,8 +259,9 @@ def plot_pleiotropy_matrix(merged_df, phen_names, out_dir, chromosomes=list(rang
                 
         # Store a record for every trait connected to this hub, including the SNP count
         for t, count in trait_counts.items():
-            records.append({'chr': chrm, 'BPcum': b_cum, 'proportion': prop, 'trait': t, 'n_snps': count})
-            
+            cat = category_dict.get(t, "Other")
+            records.append({'chr': chrm, 'BPcum': b_cum, 'proportion': prop, 'trait': t, 'n_snps': count, 'category': cat})
+
     matrix_df = pd.DataFrame(records)
 
     # Calculate bin-specific normalization for n_snps (0 to 1 scale within each hub)
@@ -268,11 +271,14 @@ def plot_pleiotropy_matrix(merged_df, phen_names, out_dir, chromosomes=list(rang
     )
     
     # Sort traits alphabetically for the Y-axis (or by frequency)
-    unique_traits = sorted(matrix_df['trait'].unique(), reverse=True) # Reverse so A is at the top
+    unique_traits_df = matrix_df[['category', 'trait']].drop_duplicates().sort_values(by=['category', 'trait'], ascending=[False, False])
+    unique_traits = unique_traits_df['trait'].tolist()
+    
     trait_to_y = {t: i for i, t in enumerate(unique_traits)}
     matrix_df['y_pos'] = matrix_df['trait'].map(trait_to_y)
 
-    print("4. Rendering publication-ready matrix...")
+
+    print("4. Rendering  matrix...")
     plt.rcParams.update({
         'font.family': 'sans-serif', 'font.sans-serif': ['Arial', 'Helvetica'],
         'font.size': 7, 'axes.linewidth': 0.5, 'pdf.fonttype': 42
@@ -281,11 +287,11 @@ def plot_pleiotropy_matrix(merged_df, phen_names, out_dir, chromosomes=list(rang
     # Create dual-panel figure (Top = Density, Bottom = Matrix)
     # Height ratios: Matrix panel is 5 times taller to fit all traits
     fig, (ax_top, ax_bottom) = plt.subplots(nrows=2, ncols=1, figsize=(7.2, 9), dpi=600, 
-                                            sharex=True, gridspec_kw={'height_ratios': [1, 16]})
+                                            sharex=True, gridspec_kw={'height_ratios': [1, 20]})
 
     fig.subplots_adjust(hspace=0.05) # Bring panels very close together
     
-    # --- TOP PANEL: Global Density Track ---
+    # Global Density Track
     cmap = LinearSegmentedColormap.from_list('custom_gradient', [(0.443,	0.776,	0.545),
                                                                  (0.988,	0.824,	0.024),
                                                                  (0.945,	0.298,	0.133)
@@ -300,6 +306,7 @@ def plot_pleiotropy_matrix(merged_df, phen_names, out_dir, chromosomes=list(rang
     # Draw the continuous base track in the lighter color for the entire genome
     ax_top.add_patch(patches.Rectangle((0, 0), df['BPcum'].max(), track_height, 
                                        facecolor=(0.722, 0.888, 0.773), edgecolor='none'))
+    
 
     # Overlay the darker intensity color specifically for odd chromosomes (1, 3, 5...)
     base_color = (0.443, 0.776, 0.545)
@@ -313,7 +320,14 @@ def plot_pleiotropy_matrix(merged_df, phen_names, out_dir, chromosomes=list(rang
     # Draw colored density bins
     for _, row in hub_bins.iterrows():
         color = cmap(norm(row['proportion']))
-        rect = patches.Rectangle((row['BPcum'], 0), bin_size, track_height, facecolor=color, edgecolor='none')
+        visual_width = bin_size * 1.5 
+        
+        rect = patches.Rectangle((row['BPcum'], 0), 
+                                 visual_width, 
+                                 track_height, 
+                                 facecolor=color, 
+                                 edgecolor=color,
+                                 linewidth=0.5) 
         ax_top.add_patch(rect)
         
     ax_top.set_ylim(0, track_height)
@@ -341,36 +355,72 @@ def plot_pleiotropy_matrix(merged_df, phen_names, out_dir, chromosomes=list(rang
     ax_bottom.set_yticks(range(len(unique_traits)))
     ax_bottom.set_yticklabels(unique_traits, fontsize=5) # 5pt font to fit them all cleanly
     ax_bottom.set_ylim(-1, len(unique_traits))
+
+    #create a color palette for categories
+    # 1. Replace the plt.cm.get_cmap('tab10') lines with this custom hex palette
+    unique_categories = unique_traits_df['category'].unique()
     
+    # Elegant, high-contrast qualitative palette
+    custom_palette = ['#E64B35', '#4DBBD5', '#00A087', '#3C5488', '#F39B7F', 
+                      '#8491B4', '#91D1C2', '#DC0000', '#7E6148', '#B09C85']
+    
+    custom_palette = ['#00A05B', "#C59316", '#4DBBD5', '#E64B35', '#631879', 
+                      '#91D1C2', '#8491B4', "#89603D", '#00A087', '#DC0000', "#3C5488"]
+    
+
+    
+    # Map the colors, looping back to the start if you have more than 10 categories
+    category_color_dict = {cat: custom_palette[i % len(custom_palette)] for i, cat in enumerate(unique_categories)}
+
     # Format X-axis with Chromosome Centers
     ax_bottom.set_xlim(0, df['BPcum'].max())
     ax_bottom.set_xticks(axis_df.values)
     ax_bottom.set_xticklabels(axis_df.index)
     ax_bottom.set_xlabel('Chromosome', fontweight='bold', labelpad=8)
+
+    for tick_label, trait in zip(ax_bottom.get_yticklabels(), unique_traits):
+        cat = unique_traits_df[unique_traits_df['trait'] == trait]['category'].values[0]
+        tick_label.set_color(category_color_dict[cat])
+        tick_label.set_fontweight('bold')
     
     # Clean up matrix borders
     ax_bottom.spines['top'].set_visible(False)
     ax_bottom.spines['right'].set_visible(False)
     ax_bottom.grid(axis='y', color='gray', linestyle=':', linewidth=0.3, alpha=0.5)
 
-    # Create a new axis for the trait matrix colorbar on the lower right side
-    cbar_ax_bottom = fig.add_axes([0.92, 0.4, 0.02, 0.2]) 
+    # y-axis title
     ax_bottom.text(-0.02, 1.02, 'Phenotypes', 
                    transform=ax_bottom.transAxes, 
                    fontsize=7, fontweight='bold', 
                    ha='right', va='bottom')
     
+    # number of hits legend
+    cbar_ax_bottom = fig.add_axes([0.9352, 0.25, 0.02, 0.2]) 
+    
     # Map the coolwarm colormap (from 0 to 1) to match your bin-specific normalization
     sm_bottom = plt.cm.ScalarMappable(cmap='coolwarm', norm=Normalize(vmin=0, vmax=1))
     sm_bottom.set_array([])
     
-    # Draw and format the colorbar to Nature Genetics standards
+    # Hit Colorbar Legend
     cbar_bottom = fig.colorbar(sm_bottom, cax=cbar_ax_bottom)
     cbar_bottom.set_ticks([0, 1])
     cbar_bottom.set_ticklabels(['Low','High'], fontsize=6)
     cbar_bottom.set_label('Number of Hits Taken', fontsize=7, fontweight='bold', labelpad=1, rotation=270)
-    cbar_bottom.outline.set_linewidth(0.1)
-    cbar_bottom.ax.tick_params(width=0.1, size=2.5)
+    cbar_bottom.outline.set_linewidth(0.5)
+    cbar_bottom.ax.tick_params(width=0.5, size=2.5)
+    
+    # Categories Legend
+    visual_order_categories = reversed(unique_traits_df['category'].unique())
+    legend_elements = [patches.Patch(facecolor=category_color_dict[cat], edgecolor='black', 
+                                     label=textwrap.fill(str(cat), width=30, break_long_words=False,
+                                                         break_on_hyphens=False), 
+                                     linewidth=0.5) 
+                       for cat in visual_order_categories]
+    
+    
+    ax_bottom.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1.03, 0.95), 
+                     ncol=1, fontsize=7, frameon=False, labelspacing=1.1,
+                     title="Trait Categories", title_fontproperties={'weight': 'bold', 'size': 7})
 
     # Output
     output_file = os.path.join(out_dir, "pleiotropy_matrix.png")
@@ -381,9 +431,9 @@ def plot_pleiotropy_matrix(merged_df, phen_names, out_dir, chromosomes=list(rang
 
 if __name__ == "__main__":
    
-    data_path = "/Users/sezgi/Documents/overlapped_SNPs/significant_SNPs/all_sig_SNPs.tsv.gz"
-    output_dir = "/Users/sezgi/Documents/overlapped_SNPs/plots"
-    phen_names = "/Users/sezgi/Documents/overlapped_SNPs/UKB_sumstats_Neale/phen_names.xlsx"
+    data_path = "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/significant_SNPs/all_sig_SNPs.tsv.gz"
+    output_dir = "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/results"
+    phen_names = "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/phen_dict_renamed.xlsx"
     
     merged_df = pd.read_csv(data_path, sep="\t", compression="gzip", 
                             usecols=["variant", "chr", "pos", 

@@ -7,7 +7,7 @@ library(scales)
 rm(list = setdiff(ls(all.names = TRUE), c("all_sig_df", "clumped_df")))
 
 #  Load the data 
-all_sig_path <- "/Users/sezgi/Documents/overlapped_SNPs/significant_SNPs/all_sig_SNPs.tsv.gz"
+all_sig_path <- "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/significant_SNPs/all_sig_SNPs.tsv.gz"
 all_sig_df <- fread(all_sig_path, select = c("variant", "rsid", "chr", "pos", "add_sig_total", "dom_sig_total"),
                     colClasses = c(
                       variant = "character",
