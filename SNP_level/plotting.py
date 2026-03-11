@@ -7,6 +7,7 @@ import matplotlib.colors as mcolors
 import matplotlib.patches as patches
 from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
+import matplotlib.transforms as mtransforms
 from matplotlib.colors import LinearSegmentedColormap 
 
 
@@ -395,6 +396,7 @@ def plot_pleiotropy_matrix(merged_df, phen_names, out_dir, chromosomes=list(rang
         
     ax_top.set_ylim(0, track_height)
     ax_top.set_yticks([])
+    ax_bottom.tick_params(axis='y', length=5, width=0.8, pad=4)
     ax_top.set_title('Variant Density', fontweight='bold', fontsize=7, loc='center', pad=6)
     ax_top.spines['top'].set_visible(False)
     ax_top.spines['right'].set_visible(False)
@@ -423,7 +425,7 @@ def plot_pleiotropy_matrix(merged_df, phen_names, out_dir, chromosomes=list(rang
     # 1. Replace the plt.cm.get_cmap('tab10') lines with this custom hex palette
     unique_categories = unique_traits_df['category'].unique()
     custom_palette = ["#3C5488", '#DC0000','#00A087',"#89603D",'#8491B4', '#91D1C2',"#F39B7F",
-                       '#631879',"#B09C85",'#00A05B','#4DBBD5',"#C59316","#E64B35"]
+                       '#631879',"#B09C85",'#00A05B',"#E64B35","#C59316", '#4DBBD5']
     
     # 3. Apply the 70% opacity to all colors at once
     new_palette = [mcolors.to_rgba(c, alpha=1) for c in custom_palette]
@@ -434,17 +436,29 @@ def plot_pleiotropy_matrix(merged_df, phen_names, out_dir, chromosomes=list(rang
     # 5. Map them together safely (the % len(new_palette) ensures it loops if you have >11 categories)
     category_color_dict = {cat: new_palette[i % len(new_palette)] for i, cat in enumerate(top_to_bottom_cats)}
 
+    trans = mtransforms.blended_transform_factory(ax_bottom.transAxes, ax_bottom.transData)
+
+    # Loop through the exact Y-positions and traits
+    for y_pos, trait in enumerate(unique_traits):
+        
+        # Look up the color for this trait's category
+        cat = unique_traits_df[unique_traits_df['trait'] == trait]['category'].values[0]
+        color = category_color_dict[cat]
+        
+        # Draw a colored block exactly where the tick mark sits
+        # X starts at -0.03 (just outside the plot) and width=0.03 brings it flush to the axis line
+        # Y starts at y_pos - 0.5 with height=1.0 so the blocks touch each other perfectly without gaps
+        rect = patches.Rectangle((-0.008, y_pos - 0.5), width=0.008, height=1.0, 
+                                 transform=trans, facecolor=color, edgecolor='none', 
+                                 clip_on=False, alpha=0.8)
+        ax_bottom.add_patch(rect)
+
     # Format X-axis with Chromosome Centers
     ax_bottom.set_xlim(0, df['BPcum'].max())
     ax_bottom.set_xticks(axis_df.values)
     ax_bottom.set_xticklabels(axis_df.index)
     ax_bottom.set_xlabel('Chromosome', fontweight='bold', labelpad=8)
 
-    for tick_label, trait in zip(ax_bottom.get_yticklabels(), unique_traits):
-        cat = unique_traits_df[unique_traits_df['trait'] == trait]['category'].values[0]
-        tick_label.set_color(category_color_dict[cat])
-        tick_label.set_fontweight('bold')
-    
     # Clean up matrix borders
     ax_bottom.spines['top'].set_visible(False)
     ax_bottom.spines['right'].set_visible(False)
@@ -481,7 +495,7 @@ def plot_pleiotropy_matrix(merged_df, phen_names, out_dir, chromosomes=list(rang
     
     
     ax_bottom.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1.03, 0.98), 
-                     ncol=1, fontsize=7, frameon=False, labelspacing=1.1,
+                     ncol=1, fontsize=7, frameon=False, labelspacing=0.8,
                      title="Trait Categories", title_fontproperties={'weight': 'bold', 'size': 7})
 
     # Output
@@ -504,7 +518,7 @@ if __name__ == "__main__":
                                      "dom_sig_total", "sig_dom_traits"],
                                      dtype={"sig_dom_traits": str})
     
-    plot_manhattan(sig_SNPs_df, output_dir)
+    #plot_manhattan(sig_SNPs_df, output_dir)
     #plot_chromosome_density(sig_SNPs_df, output_dir)
-    #plot_pleiotropy_matrix(sig_SNPs_df, phen_names, output_dir)
+    plot_pleiotropy_matrix(sig_SNPs_df, phen_names, output_dir)
     #plot_desc_percentages(desc_file_path, output_dir)

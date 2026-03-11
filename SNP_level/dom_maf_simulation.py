@@ -3,7 +3,7 @@ import pandas as pd
 import scipy.stats as stats
 import matplotlib.pyplot as plt
 
-# Nature Genetics style settings
+
 plt.rcParams['font.family'] = 'sans-serif'
 plt.rcParams['font.sans-serif'] = ['Arial', 'Helvetica', 'DejaVu Sans']
 plt.rcParams['axes.spines.top'] = False
@@ -18,7 +18,7 @@ plt.rcParams['legend.frameon'] = False
 # Parameters
 a = 0
 d = 0.0012
-h2 = 0.05
+h2 = 0.01
 
 mafs = np.linspace(0.1, 0.5, 21)
 Ns = [10000, 50000, 100000, 200000, 350000]
@@ -89,9 +89,9 @@ y_max = df['logP'].max()
 plt.xlabel('Minor Allele Frequency (MAF)')
 plt.ylabel(r'$-\log_{10}(P)$ of Additive Model')
 plt.suptitle('Power of Additive Model for Detecting Dominance Effect\nAcross MAF and Sample Size', fontsize=16)
-plt.title(f'Underlying Model: a=0, {d}, h2=0.05', fontsize=12, loc="left")
+plt.title(f'Underlying Model: a={a}, d={d}, H^2={h2}', fontsize=12, loc="left")
 plt.legend(title='Sample Size (N)', loc='upper right')
 
 plt.tight_layout()
-plt.savefig('/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/results/dom_simulation2.png', 
+plt.savefig('/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/results/dom_simulation.png', 
             dpi=600, bbox_inches='tight')
