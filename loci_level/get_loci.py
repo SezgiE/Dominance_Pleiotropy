@@ -1,20 +1,61 @@
 import pandas as pd
+import numpy as np
 
 
-def get_sumstat():
+def get_SNPs_in_LD(chr_sumstat_df, snp, r2, p_threshold=0.05):
+    """For a given SNP, it find all other SNPs in LD (>= r2)"""
+    print(snp, r2)
 
 
-
-def get_LD_info():
-
-
-def sumstats_QC():
+def merge_ld_blocks(ld_df, merge_window=250):
+    """Merges LD blocks closer than merge_window(kb)"""
+    print("Merging LD blocks")
 
 
-def get_independent_SNPs():
+def main(sumstat_path, p_threshold=(5e-8)/1060):
 
+    # Read GWAS summary statistic file
+    sumstat_df = pd.read_csv(
+        sumstat_path,
+        sep="\t",
+        compression="gzip",
+        dtype={"variant": str,"rsid": str,"chr": int,"pos": int,
+            "minor_AF": float,"low_confidence_variant": str,"N": int,
+            "beta": float,"pval": float,"dominance_beta": float,
+            "dominance_pval": float,"add_sig": int,"dom_sig": int,
+        },
+    )
 
-def main():
+    # Get chromosomes
+    chrom = sumstat_path["chr"].dropna().unique()
+
+    # Initialize output dataframe
+    ld_df = pd.DataFrame()
+
+    # Loop through chromosomes
+    for c in chrom:
+        chr_df = sumstat_df[sumstat_df["chr"] == c].copy()
+
+        # Get significant SNPs and sort them
+        sorted_sig_df = chr_df[chr_df["dominance_pval"] < p_threshold].sort_values("dominance_pval", ascending=True).copy()
+        
+        # Initialize variables
+        indep_sig_snps = []
+        stage1_clumped = set()
+
+        # Loop through significant SNPs
+        for _, row in sorted_sig_df.iterrows():
+            snp = row['variant']
+            if snp in stage1_clumped:
+                continue
+                
+            indep_sig_snps.append(snp)
+            
+            # Find all other SNPs in LD (r2 >= 0.6) to clump them
+            snps_df, snps_set = get_SNPs_in_LD(chr_df, snp, 0.6, 0.05)
+            ld_df = pd.concat([ld_df, snps_df])
+            stage1_clumped.update(snps_set)
+
 
 
 def define_gwas_loci(sumstats, ld_pairs, sig_p=(5e-8)/1060, nom_p=0.05, r2_stage1=0.6, r2_stage2=0.1, merge_kb=250):
