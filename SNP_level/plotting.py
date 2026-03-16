@@ -269,8 +269,8 @@ def plot_desc_percentages(desc_file_path, out_dir):
 
 def plot_pleiotropy_matrix(merged_df, phen_names, out_dir, chromosomes=list(range(1, 23)), bin_size=1_000_000):
     print("1. Loading trait dictionary...")
-    names_list = pd.read_excel(phen_names, usecols=["phen_code", "description", "category"])
-    trait_dict = dict(zip(names_list['phen_code'].astype(str), names_list['description']))
+    names_list = pd.read_excel(phen_names, usecols=["phenotype_code", "description", "category"])
+    trait_dict = dict(zip(names_list['phenotype_code'].astype(str), names_list['description']))
     category_dict = dict(zip(names_list['description'], names_list['category']))
     
     print(f"2. Preparing data for {len(chromosomes)} chromosomes...")
@@ -397,7 +397,7 @@ def plot_pleiotropy_matrix(merged_df, phen_names, out_dir, chromosomes=list(rang
     ax_top.set_ylim(0, track_height)
     ax_top.set_yticks([])
     ax_bottom.tick_params(axis='y', length=5, width=0.8, pad=4)
-    ax_top.set_title('Variant Density', fontweight='bold', fontsize=7, loc='center', pad=6)
+    ax_top.set_title('Variant Density in 1Mb Window', fontweight='bold', fontsize=7, loc='center', pad=6)
     ax_top.spines['top'].set_visible(False)
     ax_top.spines['right'].set_visible(False)
     ax_top.spines['left'].set_visible(False)
@@ -471,7 +471,7 @@ def plot_pleiotropy_matrix(merged_df, phen_names, out_dir, chromosomes=list(rang
                    ha='right', va='bottom')
     
     # number of hits legend
-    cbar_ax_bottom = fig.add_axes([0.9352, 0.25, 0.02, 0.2]) 
+    cbar_ax_bottom = fig.add_axes([1.03, 0.2, 0.02, 0.2]) 
     
     # Map the coolwarm colormap (from 0 to 1) to match your bin-specific normalization
     sm_bottom = plt.cm.ScalarMappable(cmap='coolwarm', norm=Normalize(vmin=0, vmax=1))
@@ -481,10 +481,22 @@ def plot_pleiotropy_matrix(merged_df, phen_names, out_dir, chromosomes=list(rang
     cbar_bottom = fig.colorbar(sm_bottom, cax=cbar_ax_bottom)
     cbar_bottom.set_ticks([0, 1])
     cbar_bottom.set_ticklabels(['Low','High'], fontsize=6)
-    cbar_bottom.set_label('Number of Hits Taken', fontsize=7, fontweight='bold', labelpad=1, rotation=270)
+    cbar_bottom.ax.set_title('Hit Density\nin 1Mb Window', fontsize=7, fontweight='bold', pad=10, loc='center')
     cbar_bottom.outline.set_linewidth(0.5)
     cbar_bottom.ax.tick_params(width=0.5, size=2.5)
-    
+
+    # Variant Density legend
+    cbar_ax_top = fig.add_axes([1.0, 0.8442, 0.08, 0.01]) 
+    sm_top = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm_top.set_array([])
+    cbar_top = fig.colorbar(sm_top, cax=cbar_ax_top, orientation='horizontal')
+    cbar_top.ax.xaxis.set_ticks_position('top')
+    cbar_top.set_ticks([norm.vmin, norm.vmax])
+    cbar_top.set_ticklabels(['Low', 'High'], fontsize=6)
+    cbar_top.outline.set_linewidth(0.5)
+    cbar_top.ax.tick_params(width=0.5, size=2.5)
+
+
     # Categories Legend
     visual_order_categories = reversed(unique_traits_df['category'].unique())
     legend_elements = [patches.Patch(facecolor=category_color_dict[cat], edgecolor='black', 
@@ -494,9 +506,9 @@ def plot_pleiotropy_matrix(merged_df, phen_names, out_dir, chromosomes=list(rang
                        for cat in visual_order_categories]
     
     
-    ax_bottom.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1.03, 0.98), 
+    ax_bottom.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1.03, 0.93), 
                      ncol=1, fontsize=7, frameon=False, labelspacing=0.8,
-                     title="Trait Categories", title_fontproperties={'weight': 'bold', 'size': 7})
+                     title="Phenotype Categories", title_fontproperties={'weight': 'bold', 'size': 7})
 
     # Output
     output_file = os.path.join(out_dir, "pleiotropy_matrix.png")

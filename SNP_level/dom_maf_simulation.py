@@ -3,7 +3,7 @@ import pandas as pd
 import scipy.stats as stats
 import matplotlib.pyplot as plt
 
-
+# Nature Genetics style settings
 plt.rcParams['font.family'] = 'sans-serif'
 plt.rcParams['font.sans-serif'] = ['Arial', 'Helvetica', 'DejaVu Sans']
 plt.rcParams['axes.spines.top'] = False
@@ -17,8 +17,8 @@ plt.rcParams['legend.frameon'] = False
 
 # Parameters
 a = 0
-d = 0.0012
-h2 = 0.01
+d = 0
+h2_d = 0.01  # Fixed Dominance Heritability (Input)
 
 mafs = np.linspace(0.1, 0.5, 21)
 Ns = [10000, 50000, 100000, 200000, 350000]
@@ -32,6 +32,11 @@ for N in Ns:
         q = 1 - p
         prob = [q**2, 2*p*q, p**2]
         
+        # Calculate Broad-Sense Heritability (H2) based on MAF and h2_d
+        # H2 = h2_d * (1 + x), where x = (q-p)^2 / 2pq
+        x = ((q - p)**2) / (2 * p * q)
+        H2 = h2_d * (1 + x)
+        
         pvals = []
         for _ in range(iterations):
             # 1. Simulate Genotypes
@@ -42,16 +47,16 @@ for N in Ns:
             y_gen[g == 1] = a + d
             y_gen[g == 2] = 2 * a
             
-            # 3. Add Environmental Noise to maintain h2 = 0.05
+            # 3. Add Environmental Noise to maintain the dynamic H2
             var_g = np.var(y_gen)
             if var_g == 0: var_g = 1e-10
-            var_e = var_g * (1 - h2) / h2
+            var_e = var_g * (1 - H2) / H2
             y = y_gen + np.random.normal(0, np.sqrt(var_e), N)
             
             # 4. Fit Linear Regression
             slope, intercept, r_value, p_value, std_err = stats.linregress(g, y)
             
-            # 5. Robust -log10(p-value) using the t-statistic (prevents underflow to 0)
+            # 5. Robust -log10(p-value) using the t-statistic
             t_stat = slope / std_err if std_err > 0 else 0
             if t_stat == 0:
                 log10_p = 0
@@ -64,7 +69,8 @@ for N in Ns:
         results.append({
             'N': N,
             'MAF': maf,
-            'logP': np.mean(pvals)
+            'logP': np.mean(pvals),
+            'H2': H2  # Saving the dynamic H2 for reference
         })
 
 df = pd.DataFrame(results)
@@ -84,12 +90,12 @@ gwas_sig = -np.log10((5e-8)/1060)
 plt.axhline(gwas_sig, color='red', linestyle='--', linewidth=1.5, zorder=0)
 plt.gca().text(0.15, 0.1, r'$p < 4.72 \times 10^{-11}$', transform=plt.gca().transAxes, fontsize=7, ha='right', color='red')
 
-y_max = df['logP'].max()
-
 plt.xlabel('Minor Allele Frequency (MAF)')
 plt.ylabel(r'$-\log_{10}(P)$ of Additive Model')
 plt.suptitle('Power of Additive Model for Detecting Dominance Effect\nAcross MAF and Sample Size', fontsize=16)
-plt.title(f'Underlying Model: a={a}, d={d}, H^2={h2}', fontsize=12, loc="left")
+
+# Updated Title to reflect input parameters
+plt.title(fr'Underlying Model: a={a}, d={d}, $h^2_D$={h2_d}', fontsize=12, loc="left")
 plt.legend(title='Sample Size (N)', loc='upper right')
 
 plt.tight_layout()

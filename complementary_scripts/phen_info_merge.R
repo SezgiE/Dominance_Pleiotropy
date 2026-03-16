@@ -27,7 +27,7 @@ unique_traits <- all_sig_df %>%
   separate_rows(sig_dom_traits, sep = ",") %>%                               # Expand into individual rows
   filter(sig_dom_traits != "") %>%                                           # Remove empty strings if any
   distinct(sig_dom_traits) %>%
-  rename("phen_code" = sig_dom_traits)
+  rename("phenotype_code" = sig_dom_traits)
 
 
 phen_info_Neale <- fread("/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/all_phenotypes_info.tsv.gz")
@@ -35,10 +35,10 @@ phen_info_UKB <- fread("/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats
 phen_domains <- fread("/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/UKB_domains.tsv", select = c("category_id", "title"))
 
 phen_info_filtered <- unique_traits %>%
-  inner_join(phen_info_Neale, by = c("phen_code" = "phenotype"))
+  inner_join(phen_info_Neale, by = c("phenotype_code" = "phenotype"))
 
 phen_info_filtered <- phen_info_filtered %>%
-  mutate(field_id = str_extract(phen_code, "^[^_]+")) %>%
+  mutate(field_id = str_extract(phenotype_code, "^[^_]+")) %>%
   mutate(field_id = as.character(field_id)) %>% 
   left_join(
     phen_info_UKB %>% mutate(field_id = as.character(field_id)), 
