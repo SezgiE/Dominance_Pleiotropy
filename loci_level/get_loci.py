@@ -1,10 +1,93 @@
-import pandas as pd
+import os
+import glob
 import numpy as np
+import pandas as pd
+import scipy.sparse
 
+def get_SNPs_in_LD(chr_sumstat_df, ld_dir, snp, r2_threshold, p_threshold=0.05):
+    """
+    For a given SNP, finds all other SNPs (dominance_pval < p_threshold) in LD (>= r2).
+    """
+    # Parse the input SNP string (Format: "chr:pos:ref:alt")
+    try:
+        chrom, pos, ref, alt = snp.split(':')
+        chrom = int(chrom)
+        pos = int(pos)
+    except ValueError:
+        raise ValueError(f"SNP {snp} is not in the expected 'chr:pos:ref:alt' format.")
 
-def get_SNPs_in_LD(chr_sumstat_df, snp, r2, p_threshold=0.05):
-    """For a given SNP, it find all other SNPs in LD (>= r2)"""
-    print(snp, r2)
+    # Locate the correct LD chunk file on your hard drive
+    chunk_files = glob.glob(os.path.join(ld_dir, f"chr{chrom}_*.npz"))
+    target_npz = None
+    target_gz = None
+    
+    for f in chunk_files:
+        basename = os.path.basename(f).replace('.npz', '')
+        parts = basename.split('_')
+        start = int(parts[1])
+        end = int(parts[2])
+        
+        if start <= pos <= end:
+            target_npz = f
+            target_gz = os.path.join(ld_dir, f"{basename}.gz")
+            break
+            
+    if not target_npz or not os.path.exists(target_gz):
+        print(f"Error: LD chunk containing position {pos} not found in {ld_dir}.")
+        return [],[]
+
+    # Load the SNP manifest (.gz) to find our variant's exact row index
+    manifest = pd.read_csv(target_gz, compression="gzip", sep='\t')
+    pos_col = "position"
+    
+    snp_matches = manifest.index[manifest[pos_col] == pos].tolist()
+    if not snp_matches:
+        print(f"Warning: Position {pos} exists in the chunk window, but the SNP is missing from the LD reference panel.")
+        return [],[]
+        
+    target_idx = snp_matches[0] # Grab the first match if multi-allelic
+
+    with np.load(target_npz) as ld_data:
+        row_indices = ld_data['row']
+        col_indices = ld_data['col']
+        correlation_data = ld_data['data']
+        matrix_shape = ld_data['shape']
+    
+    # Extract only the correlations involving the target SNP
+    row_matches = (row_indices == target_idx)
+    col_matches = (col_indices == target_idx)
+
+    linked_indices = np.concatenate([col_indices[row_matches], row_indices[col_matches]])
+    r_values = np.concatenate([correlation_data[row_matches], correlation_data[col_matches]])
+    r_values = (r_values**2)**2
+    
+    # Apply 2-times r-squared filter
+    valid_mask = (r_values > r2_threshold)
+    final_indices = linked_indices[valid_mask]
+    final_r2_values = (r_values)[valid_mask]
+    
+    # Get the base-pair positions for these linked SNPs
+    ld_positions = manifest.iloc[final_indices][pos_col].values
+    pos_to_r2 = dict(zip(ld_positions, final_r2_values))
+    pos_to_r2[pos] = 1.0
+
+    # Final filtering on your summary stats dataframe
+    result_df = chr_sumstat_df[
+        (chr_sumstat_df['pos'].isin(ld_positions)) & 
+        (chr_sumstat_df['dominance_pval'] < p_threshold)
+    ]
+
+    ld_snps = result_df['variant'].tolist()
+
+    lead_snp_row = chr_sumstat_df[chr_sumstat_df['variant'] == snp].copy()
+    result_df = pd.concat([result_df, lead_snp_row]).drop_duplicates(subset=['variant'])
+
+    result_df['indep_status'] = (result_df['variant'] == snp)
+    result_df['indep_id'] = snp
+    result_df['r4'] = result_df['pos'].map(pos_to_r2)
+    result_df = result_df.sort_values(by='pos').reset_index(drop=True)
+    
+    return result_df, set(ld_snps)
 
 
 def merge_ld_blocks(ld_df, merge_window=250):
@@ -12,25 +95,28 @@ def merge_ld_blocks(ld_df, merge_window=250):
     print("Merging LD blocks")
 
 
-def main(sumstat_path, p_threshold=(5e-8)/1060):
+def main(sumstat_path, ld_dir, output_path, p_threshold=(5e-8)/1060):
 
     # Read GWAS summary statistic file
     sumstat_df = pd.read_csv(
         sumstat_path,
         sep="\t",
         compression="gzip",
-        dtype={"variant": str,"rsid": str,"chr": int,"pos": int,
-            "minor_AF": float,"low_confidence_variant": str,"N": int,
-            "beta": float,"pval": float,"dominance_beta": float,
-            "dominance_pval": float,"add_sig": int,"dom_sig": int,
-        },
+        dtype={"variant":str, "rsid":str, "chr":int, "pos":int,
+            "minor_AF":float, "low_confidence_variant":str, "N": int,
+            "beta":float, "pval":float, "dominance_beta":float,
+            "dominance_pval":float, "add_sig":int, "dom_sig":int
+        }
     )
 
     # Get chromosomes
-    chrom = sumstat_path["chr"].dropna().unique()
+    chrom = sumstat_df["chr"].dropna().unique()
 
     # Initialize output dataframe
-    ld_df = pd.DataFrame()
+    out_df = pd.DataFrame()
+    indep_df = pd.DataFrame()
+    lead_df = pd.DataFrame()
+
 
     # Loop through chromosomes
     for c in chrom:
@@ -43,7 +129,7 @@ def main(sumstat_path, p_threshold=(5e-8)/1060):
         indep_sig_snps = []
         stage1_clumped = set()
 
-        # Loop through significant SNPs
+        # Stage 1 clumping: loop through significant SNPs
         for _, row in sorted_sig_df.iterrows():
             snp = row['variant']
             if snp in stage1_clumped:
@@ -52,125 +138,41 @@ def main(sumstat_path, p_threshold=(5e-8)/1060):
             indep_sig_snps.append(snp)
             
             # Find all other SNPs in LD (r2 >= 0.6) to clump them
-            snps_df, snps_set = get_SNPs_in_LD(chr_df, snp, 0.6, 0.05)
-            ld_df = pd.concat([ld_df, snps_df])
+            snps_df, snps_set = get_SNPs_in_LD(chr_df, ld_dir, snp, r2_threshold=(0.6)**2, p_threshold=0.05)
+            indep_df = pd.concat([indep_df, snps_df])
             stage1_clumped.update(snps_set)
 
 
+        # Stage 2 clumping : Define Lead SNPs (r2 < 0.1)
+        stage2_df = chr_df[chr_df['variant'].isin(indep_sig_snps)].sort_values('dominance_pval')
+       
+        lead_snps = []
+        stage2_clumped = set()
 
-def define_gwas_loci(sumstats, ld_pairs, sig_p=(5e-8)/1060, nom_p=0.05, r2_stage1=0.6, r2_stage2=0.1, merge_kb=250):
-
-    """
-    Performs two-stage clumping and defines genomic loci from GWAS summary statistics.
-    
-    Expected Inputs:
-    - sumstats: DataFrame with columns ['SNP', 'CHR', 'POS', 'P']
-    - ld_pairs: DataFrame with columns ['SNP_A', 'SNP_B', 'r2'] containing all pairs with r2 > 0.1
-    """
-    
-    # 1. Helper function for fast LD lookup
-    def get_ld(snp1, snp2):
-        if snp1 == snp2: return 1.0
-        match = ld_pairs[((ld_pairs['SNP_A'] == snp1) & (ld_pairs['SNP_B'] == snp2)) | 
-                         ((ld_pairs['SNP_A'] == snp2) & (ld_pairs['SNP_B'] == snp1))]
-        return match['r2'].values[0] if not match.empty else 0.0
-
-
-    # 2. Stage 1: Define Independent Significant SNPs (r2 < 0.6)
-    sig_df = sumstats[sumstats['P'] < sig_p].sort_values('P').copy()
-    indep_sig_snps = []
-    stage1_clumped = set()
-
-    for _, row in sig_df.iterrows():
-        snp = row['SNP']
-        if snp in stage1_clumped:
-            continue
-            
-        indep_sig_snps.append(snp)
-        
-        # Find all other significant SNPs in LD (r2 >= 0.6) to clump them
-        for other_snp in sig_df['SNP']:
-            if other_snp not in stage1_clumped and get_ld(snp, other_snp) >= r2_stage1:
-                stage1_clumped.add(other_snp)
-
-
-    # 3. Stage 2: Define Lead SNPs (r2 < 0.1)
-    # Subset to the independent significant SNPs and apply the stricter threshold
-    stage2_df = sumstats[sumstats['SNP'].isin(indep_sig_snps)].sort_values('P')
-    lead_snps = []
-    stage2_clumped = set()
-
-    for _, row in stage2_df.iterrows():
-        snp = row['SNP']
-        if snp in stage2_clumped:
-            continue
-            
-        lead_snps.append(snp)
-        
-        for other_snp in stage2_df['SNP']:
-            if other_snp not in stage2_clumped and get_ld(snp, other_snp) >= r2_stage2:
-                stage2_clumped.add(other_snp)
-
-
-    # 4. Define Locus Boundaries (Merging blocks < 250kb)
-    loci = []
-    for snp in indep_sig_snps:
-        snp_chr = sumstats.loc[sumstats['SNP'] == snp, 'CHR'].values[0]
-        
-        # Find all SNPs with P < 0.05 in LD >= 0.6 with the independent significant SNP
-        nom_snps = sumstats[(sumstats['P'] < nom_p) & (sumstats['CHR'] == snp_chr)]
-        ld_snps = [s for s in nom_snps['SNP'] if get_ld(snp, s) >= r2_stage1]
-        
-        ld_snps_pos = sumstats[sumstats['SNP'].isin(ld_snps)]['POS']
-        
-        if not ld_snps_pos.empty:
-            loci.append({
-                'indep_snp': snp,
-                'chr': snp_chr,
-                'start': ld_snps_pos.min(),
-                'end': ld_snps_pos.max(),
-                'p_val': sumstats.loc[sumstats['SNP'] == snp, 'P'].values[0]
-            })
-
-    # Sort loci by genomic position for sequential merging
-    loci_df = pd.DataFrame(loci).sort_values(['chr', 'start'])
-
-    # 5. Merge loci within 250kb
-    merged_loci = []
-    merge_dist_bp = merge_kb * 1000
-
-    if not loci_df.empty:
-        current_locus = loci_df.iloc[0].to_dict()
-        current_locus['all_indep_snps'] = [current_locus['indep_snp']]
-
-        for i in range(1, len(loci_df)):
-            next_locus = loci_df.iloc[i]
-            
-            # Check if on same chromosome and within merge distance
-            if (current_locus['chr'] == next_locus['chr']) and \
-               (next_locus['start'] - current_locus['end'] <= merge_dist_bp):
+        for _, row in stage2_df.iterrows():
+            snp = row['variant']
+            if snp in stage2_clumped:
+                continue
                 
-                # Expand boundaries and store the newly encompassed independent SNP
-                current_locus['end'] = max(current_locus['end'], next_locus['end'])
-                current_locus['all_indep_snps'].append(next_locus['indep_snp'])
-                # The top SNP represents the locus (minimum P value)
-                if next_locus['p_val'] < current_locus['p_val']:
-                    current_locus['top_snp'] = next_locus['indep_snp']
-                    current_locus['p_val'] = next_locus['p_val']
-            else:
-                if 'top_snp' not in current_locus:
-                    current_locus['top_snp'] = current_locus['indep_snp']
-                merged_loci.append(current_locus)
-                current_locus = next_locus.to_dict()
-                current_locus['all_indep_snps'] = [current_locus['indep_snp']]
-        
-        if 'top_snp' not in current_locus:
-            current_locus['top_snp'] = current_locus['indep_snp']
-        merged_loci.append(current_locus)
+            lead_snps.append(snp)
 
-    final_loci_df = pd.DataFrame(merged_loci)
+            # Find all other SNPs in LD (r2 >= 0.1) to clump them
+            snps_df, snps_set = get_SNPs_in_LD(stage2_df, ld_dir, snp, r2_threshold=(0.1)**2, p_threshold=0.05)
+            lead_df = pd.concat([lead_df, snps_df])
+            stage2_clumped.update(snps_set)
+        
+    # Save files
+    out_name_indep = f"{output_path}/indep.xlsx"
+    out_name_lead = f"{output_path}/lead.xlsx"
+    indep_df.to_excel(out_name_indep, index=False)
+    lead_df.to_excel(out_name_lead, index=False)
+
+
+if __name__ == "__main__":
     
-    return {
-        'lead_snps': sumstats[sumstats['SNP'].isin(lead_snps)],
-        'genomic_loci': final_loci_df[['chr', 'start', 'end', 'top_snp', 'p_val', 'all_indep_snps']]
-    }
+    sumstat_path = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sumstats_QCed/20002_1473_sig_SNPs.tsv.bgz"
+    ld_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/ld_files"
+    output_path = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level"
+    
+    main(sumstat_path, ld_dir, output_path)
+
