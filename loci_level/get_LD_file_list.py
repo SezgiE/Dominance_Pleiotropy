@@ -39,7 +39,7 @@ def download_ukb_ld_chunks(snp_file_path, ld_file_list):
                                  }
                             )
     # Filter the variants showing significant dominance 
-    my_snps = my_snps[my_snps["dom_sig_total"] > 0]
+    my_snps = my_snps[my_snps["dom_sig_total"] > 1]
     
     chrom_col = 'chr' 
     pos_col = 'pos'
@@ -56,12 +56,11 @@ def download_ukb_ld_chunks(snp_file_path, ld_file_list):
                          (chunk_df['end'] >= row[pos_col])]
         
         if not match.empty:
-            # Because chunks overlap by 1Mb, a SNP might fall in two chunks. 
-            # We just grab the first valid one to save you disk space.
-            files_to_download.add(match.iloc[0]['file_base'])
+            for _, match_row in match.iterrows():
+                files_to_download.add(match_row['file_base'])
 
-        if match.empty:
-            no_data_snps.append({"chr": row["chr"], "pos": row["pos"]})
+        else:
+            no_data_snps.append({"chr": row[chrom_col], "pos": row[pos_col]})
 
     print(f"Found {len(files_to_download)} unique LD chunks required.")
     

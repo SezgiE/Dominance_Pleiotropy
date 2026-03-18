@@ -1,12 +1,14 @@
 import os
+import sys
 import glob
 import numpy as np
 import pandas as pd
-import scipy.sparse
+from pathlib import Path
 
-def get_SNPs_in_LD(chr_sumstat_df, ld_dir, snp, r2_threshold, p_threshold=0.05):
+
+def get_SNPs_in_LD(chr_sumstat_df, ld_dir, snp, r4_threshold, p_threshold=0.05):
     """
-    For a given SNP, finds all other SNPs (dominance_pval < p_threshold) in LD (>= r2).
+    For a given SNP, finds all other SNPs (dominance_pval < p_threshold) in LD (>= r4).
     """
     # Parse the input SNP string (Format: "chr:pos:ref:alt")
     try:
@@ -18,8 +20,7 @@ def get_SNPs_in_LD(chr_sumstat_df, ld_dir, snp, r2_threshold, p_threshold=0.05):
 
     # Locate the correct LD chunk file on your hard drive
     chunk_files = glob.glob(os.path.join(ld_dir, f"chr{chrom}_*.npz"))
-    target_npz = None
-    target_gz = None
+    matching_chunks = []
     
     for f in chunk_files:
         basename = os.path.basename(f).replace('.npz', '')
@@ -28,54 +29,62 @@ def get_SNPs_in_LD(chr_sumstat_df, ld_dir, snp, r2_threshold, p_threshold=0.05):
         end = int(parts[2])
         
         if start <= pos <= end:
-            target_npz = f
             target_gz = os.path.join(ld_dir, f"{basename}.gz")
-            break
+            matching_chunks.append((f, target_gz))
             
-    if not target_npz or not os.path.exists(target_gz):
-        print(f"Error: LD chunk containing position {pos} not found in {ld_dir}.")
-        return [],[]
-
-    # Load the SNP manifest (.gz) to find our variant's exact row index
-    manifest = pd.read_csv(target_gz, compression="gzip", sep='\t')
-    pos_col = "position"
+    if not matching_chunks:
+        print(f"Error: No LD chunks containing position {pos} in chromosome {chrom} found.")
+        return pd.DataFrame(), set()
     
-    snp_matches = manifest.index[manifest[pos_col] == pos].tolist()
-    if not snp_matches:
-        print(f"Warning: Position {pos} exists in the chunk window, but the SNP is missing from the LD reference panel.")
-        return [],[]
+    master_pos_to_r = {}
+    
+    for target_npz, target_gz in matching_chunks:
+        if not os.path.exists(target_gz):
+            continue
+
+        manifest = pd.read_csv(target_gz, compression="gzip", sep='\t')
+        pos_col = "position"
+
+        snp_matches = manifest.index[manifest[pos_col] == pos].tolist()
+        if not snp_matches:
+            continue
+
+        target_idx = snp_matches[0]
+
+        with np.load(target_npz) as ld_data:
+            row_indices = ld_data['row']
+            col_indices = ld_data['col']
+            correlation_data = ld_data['data']
         
-    target_idx = snp_matches[0] # Grab the first match if multi-allelic
+        row_matches = (row_indices == target_idx)
+        col_matches = (col_indices == target_idx)
 
-    with np.load(target_npz) as ld_data:
-        row_indices = ld_data['row']
-        col_indices = ld_data['col']
-        correlation_data = ld_data['data']
-        matrix_shape = ld_data['shape']
-    
-    # Extract only the correlations involving the target SNP
-    row_matches = (row_indices == target_idx)
-    col_matches = (col_indices == target_idx)
+        linked_indices = np.concatenate([col_indices[row_matches], row_indices[col_matches]])
+        r_values = np.concatenate([correlation_data[row_matches], correlation_data[col_matches]])
 
-    linked_indices = np.concatenate([col_indices[row_matches], row_indices[col_matches]])
-    r_values = np.concatenate([correlation_data[row_matches], correlation_data[col_matches]])
-    r_values = (r_values**2)**2
+        r4_values = (r_values**2)**2 # Dominance LD is square of additive LD
     
-    # Apply 2-times r-squared filter
-    valid_mask = (r_values > r2_threshold)
-    final_indices = linked_indices[valid_mask]
-    final_r2_values = (r_values)[valid_mask]
+        # Apply 2-times r-squared filter
+        valid_mask = (r4_values >= r4_threshold)
+        final_indices = linked_indices[valid_mask]
+        final_r4_values = (r4_values)[valid_mask]
     
-    # Get the base-pair positions for these linked SNPs
-    ld_positions = manifest.iloc[final_indices][pos_col].values
-    pos_to_r2 = dict(zip(ld_positions, final_r2_values))
-    pos_to_r2[pos] = 1.0
+        # Get the base-pair positions for these linked SNPs
+        ld_positions = manifest.iloc[final_indices][pos_col].values
+
+        # Zip them together and update the master dictionary
+        # If a position already exists, it harmlessly overwrites it with the same correlation
+        chunk_dict = dict(zip(ld_positions, final_r4_values))
+        master_pos_to_r.update(chunk_dict)
+    
+    master_pos_to_r[pos] = 1.0
+
 
     # Final filtering on your summary stats dataframe
     result_df = chr_sumstat_df[
-        (chr_sumstat_df['pos'].isin(ld_positions)) & 
+        (chr_sumstat_df['pos'].isin(master_pos_to_r.keys())) & 
         (chr_sumstat_df['dominance_pval'] < p_threshold)
-    ]
+    ].copy()
 
     ld_snps = result_df['variant'].tolist()
 
@@ -84,18 +93,94 @@ def get_SNPs_in_LD(chr_sumstat_df, ld_dir, snp, r2_threshold, p_threshold=0.05):
 
     result_df['indep_status'] = (result_df['variant'] == snp)
     result_df['indep_id'] = snp
-    result_df['r4'] = result_df['pos'].map(pos_to_r2)
+    result_df['r4'] = result_df['pos'].map(master_pos_to_r)
     result_df = result_df.sort_values(by='pos').reset_index(drop=True)
     
     return result_df, set(ld_snps)
 
 
-def merge_ld_blocks(ld_df, merge_window=250):
+def merge_ld_blocks(indep_df, lead_df,  merge_window=250):
     """Merges LD blocks closer than merge_window(kb)"""
-    print("Merging LD blocks")
+
+    merge_window_kb = merge_window*1000
+
+    lead_df = lead_df[["variant", "indep_status", "indep_id", "r4"]]
+    lead_df = lead_df.rename(columns={
+        "indep_status": "lead_status",
+        "indep_id": "lead_id", 
+        "r4": "r4_lead"
+    })
+    
+    merged_df = indep_df.merge(lead_df, on="variant", how="left").copy()
+    merged_df["lead_status"] = merged_df["lead_status"].fillna(False).astype(bool)
+
+    variant_to_lead_mapping = merged_df.set_index('variant')['lead_id']
+    merged_df['lead_id'] = merged_df['lead_id'].fillna(
+        merged_df['indep_id'].map(variant_to_lead_mapping)
+    )
+
+    merged_df = merged_df.sort_values(by=["chr", "pos"])
+    merged_df = merged_df.reset_index(drop=True)
+    
+    merged_df["indep_start"] = merged_df.groupby(["chr", "indep_id"])["pos"].transform("min")
+    merged_df["indep_end"] = merged_df.groupby(["chr", "indep_id"])["pos"].transform("max")
+    
+    # Isolate unique LD blocks
+    blocks = merged_df[['chr', 'indep_id', 'indep_start', 'indep_end']].drop_duplicates()
+    blocks = blocks.sort_values(by=['chr', 'indep_start'])
+    
+    ld_starts = {}
+    ld_ends = {}
+    
+    # Iterate through each chromosome and merge close intervals
+    for chrom, chrom_group in blocks.groupby('chr'):
+        current_start = None
+        current_end = None
+        current_indep_ids = []
+        
+        for _, row in chrom_group.iterrows():
+            if current_start is None:
+                # Initialize the first block for this chromosome
+                current_start = row['indep_start']
+                current_end = row['indep_end']
+                current_indep_ids.append(row['indep_id'])
+            else:
+                # Check if the gap is smaller than or equal to the threshold
+                if (row['indep_start'] - current_end) <= merge_window_kb:
+                    # Merge them: push the end boundary out to cover the new block
+                    current_end = max(current_end, row['indep_end'])
+                    current_indep_ids.append(row['indep_id'])
+                else:
+                    # The gap is too big. Save the finalized super-block for all its members
+                    for i_id in current_indep_ids:
+                        ld_starts[i_id] = current_start
+                        ld_ends[i_id] = current_end
+                    
+                    # Reset the tracker for the next independent block
+                    current_start = row['indep_start']
+                    current_end = row['indep_end']
+                    current_indep_ids = [row['indep_id']]
+                    
+        # Catch the final block at the end of the chromosome loop
+        if current_start is not None:
+            for i_id in current_indep_ids:
+                ld_starts[i_id] = current_start
+                ld_ends[i_id] = current_end
+                
+    # Map the newly calculated super-boundaries back to every SNP in the main dataframe
+    merged_df['ld_start'] = merged_df['indep_id'].map(ld_starts)
+    merged_df['ld_end'] = merged_df['indep_id'].map(ld_ends)
+
+    cols_to_join = ["chr", "ld_start", "ld_end"]
+    merged_df["ld_id"] = merged_df[cols_to_join].astype(str).agg(':'.join, axis=1)
+
+    return merged_df
 
 
-def main(sumstat_path, ld_dir, output_path, p_threshold=(5e-8)/1060):
+def main(sumstat_path, ld_dir, output_dir, p_threshold=(5e-8)/1060):
+
+    filename = Path(sumstat_path).name
+    phen_name = filename.split('_sig')[0]
 
     # Read GWAS summary statistic file
     sumstat_df = pd.read_csv(
@@ -138,7 +223,7 @@ def main(sumstat_path, ld_dir, output_path, p_threshold=(5e-8)/1060):
             indep_sig_snps.append(snp)
             
             # Find all other SNPs in LD (r2 >= 0.6) to clump them
-            snps_df, snps_set = get_SNPs_in_LD(chr_df, ld_dir, snp, r2_threshold=(0.6)**2, p_threshold=0.05)
+            snps_df, snps_set = get_SNPs_in_LD(chr_df, ld_dir, snp, r4_threshold=(0.6)**2, p_threshold=0.05)
             indep_df = pd.concat([indep_df, snps_df])
             stage1_clumped.update(snps_set)
 
@@ -157,22 +242,36 @@ def main(sumstat_path, ld_dir, output_path, p_threshold=(5e-8)/1060):
             lead_snps.append(snp)
 
             # Find all other SNPs in LD (r2 >= 0.1) to clump them
-            snps_df, snps_set = get_SNPs_in_LD(stage2_df, ld_dir, snp, r2_threshold=(0.1)**2, p_threshold=0.05)
+            snps_df, snps_set = get_SNPs_in_LD(stage2_df, ld_dir, snp, r4_threshold=(0.1)**2, p_threshold=0.05)
             lead_df = pd.concat([lead_df, snps_df])
             stage2_clumped.update(snps_set)
         
+    # Merging the loci closer than 250 kb
+    out_df = merge_ld_blocks(indep_df, lead_df)
+   
     # Save files
-    out_name_indep = f"{output_path}/indep.xlsx"
-    out_name_lead = f"{output_path}/lead.xlsx"
-    indep_df.to_excel(out_name_indep, index=False)
-    lead_df.to_excel(out_name_lead, index=False)
+    #out_path = f"{output_dir}/{phen_name}_sig_loci.tsv.bgz"
+    #out_df.to_csv(out_path, sep="\t", compression="gzip", index=False)
+    out_path = f"{output_dir}/{phen_name}_sig_loci.xlsx"
+    out_df.to_excel(out_path, index=False)
 
+
+# ==========================================
+# ==========================================
 
 if __name__ == "__main__":
     
-    sumstat_path = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sumstats_QCed/20002_1473_sig_SNPs.tsv.bgz"
-    ld_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/ld_files"
-    output_path = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level"
-    
-    main(sumstat_path, ld_dir, output_path)
+    """# Check if a task ID was passed from the terminal
+    if len(sys.argv) < 2:
+        print("Error: missing arguments")
+        sys.exit(1)
 
+    sumstat_path = sys.argv[1]
+    ld_dir = sys.argv[2]  
+    out_dir = sys.argv[3]"""
+    
+    sumstat_path="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sumstats_QCed/20002_1473_sig_SNPs.tsv.bgz"
+    ld_dir= "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/ld_files"
+    out_dir= "/Users/sezgi/Documents/dominance_pleiotropy/loci_level"
+
+    main(sumstat_path, ld_dir, out_dir)

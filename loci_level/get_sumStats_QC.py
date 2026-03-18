@@ -94,6 +94,7 @@ def preprocess_sumstats(file_add, file_dom, file_var_info, file_out, code, maf_t
             "low_confidence_variant",
             "n_complete_samples",
             "beta",
+            "se",
             "pval",
         ],
     ).rename(columns={"n_complete_samples": "N"})
@@ -103,7 +104,7 @@ def preprocess_sumstats(file_add, file_dom, file_var_info, file_out, code, maf_t
         file_dom,
         sep="\t",
         compression="gzip",
-        usecols=["variant", "dominance_beta", "dominance_pval"],
+        usecols=["variant", "dominance_beta", "dominance_se", "dominance_pval"],
     )
     
     print("Reading Variant information")
