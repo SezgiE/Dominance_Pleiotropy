@@ -20,9 +20,11 @@ all_sig_df <- fread(all_sig_path, select = c("variant", "rsid", "chr", "pos", "a
                       dom_sig_total = "numeric"
                     ))
 
+dom_pleio <- all_sig_df %>%
+  filter(dom_sig_total > 1)
 
 
-unique_traits <- all_sig_df %>%
+unique_traits <- dom_pleio %>%
   mutate(sig_dom_traits = str_replace_all(sig_dom_traits, "[()\\s]", "")) %>% # Remove parentheses and spaces
   separate_rows(sig_dom_traits, sep = ",") %>%                               # Expand into individual rows
   filter(sig_dom_traits != "") %>%                                           # Remove empty strings if any

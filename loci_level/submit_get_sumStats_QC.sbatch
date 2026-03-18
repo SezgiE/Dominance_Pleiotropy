@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=sumStats_QC
 #SBATCH --time=00:30:00
-#SBATCH --array=1-85%85
+#SBATCH --array=1-76%76
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16        
 #SBATCH --mem=28G               

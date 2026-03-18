@@ -141,6 +141,9 @@ def preprocess_sumstats(file_add, file_dom, file_var_info, file_out, code, maf_t
     var_filtered_IND['pos'] = var_filtered_IND['variant'].apply(lambda x: int(x.split(':')[1]))
     data_filtered = var_filtered_IND.drop_duplicates(subset=['chr', 'pos'], keep=False).copy()
     print(f"removed {len(var_filtered_IND) - len(data_filtered)} variants based on diallelic filter. Remaining: {len(data_filtered)}.")
+
+    # Filter out the low confidence variants are
+    data_filtered = data_filtered[data_filtered["low_confidence_variant"].astype(str).str.lower() == 'false'].copy()
     print(f"After filtering steps, {len(data_filtered)} variants remain.")
 
     print(f"Filtering chromosome based on genome-wide significant SNPs based on  p-value threshold of {p_threshold}...")

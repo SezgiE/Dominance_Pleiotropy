@@ -22,4 +22,4 @@ echo "Task $SLURM_ARRAY_TASK_ID starting..."
 cd "$HOME_DIR"
 
 # Pass the $TMPDIR and the final output directory to your Python script
-"$PYTHON_EXEC" ./scripts/loci_level/coverage.py "$SUMSTATS_PATH" "$LD_DIR" "$OUT_DIR" "$ALL_SIG_FILE"
+"$PYTHON_EXEC" ./scripts/loci_level/ld_coverage.py "$SUMSTATS_PATH" "$LD_DIR" "$OUT_DIR" "$ALL_SIG_FILE"
