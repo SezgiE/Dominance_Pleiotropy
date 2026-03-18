@@ -67,7 +67,7 @@ def get_SNPs_in_LD(chr_sumstat_df, ld_dir, snp, r4_threshold, p_threshold=0.05):
         # Apply 2-times r-squared filter
         valid_mask = (r4_values >= r4_threshold)
         final_indices = linked_indices[valid_mask]
-        final_r4_values = (r4_values)[valid_mask]
+        final_r4_values = r4_values[valid_mask]
     
         # Get the base-pair positions for these linked SNPs
         ld_positions = manifest.iloc[final_indices][pos_col].values
@@ -86,7 +86,7 @@ def get_SNPs_in_LD(chr_sumstat_df, ld_dir, snp, r4_threshold, p_threshold=0.05):
         (chr_sumstat_df['dominance_pval'] < p_threshold)
     ].copy()
 
-    ld_snps = result_df['variant'].tolist()
+    ld_snps = [v for v in result_df['variant'].tolist() if v != snp]
 
     lead_snp_row = chr_sumstat_df[chr_sumstat_df['variant'] == snp].copy()
     result_df = pd.concat([result_df, lead_snp_row]).drop_duplicates(subset=['variant'])
@@ -128,6 +128,7 @@ def merge_ld_blocks(indep_df, lead_df,  merge_window=250):
     # Isolate unique LD blocks
     blocks = merged_df[['chr', 'indep_id', 'indep_start', 'indep_end']].drop_duplicates()
     blocks = blocks.sort_values(by=['chr', 'indep_start'])
+    print(f"8. Merging starts with {len(blocks)} unique LD blocks.")
     
     ld_starts = {}
     ld_ends = {}
@@ -173,16 +174,15 @@ def merge_ld_blocks(indep_df, lead_df,  merge_window=250):
 
     cols_to_join = ["chr", "ld_start", "ld_end"]
     merged_df["ld_id"] = merged_df[cols_to_join].astype(str).agg(':'.join, axis=1)
+    print(f"9. {merged_df['ld_id'].nunique()} independent LD blocks remained after merging.")
 
     return merged_df
 
 
-def main(sumstat_path, ld_dir, output_dir, p_threshold=(5e-8)/1060):
-
-    filename = Path(sumstat_path).name
-    phen_name = filename.split('_sig')[0]
+def main(sumstat_path, ld_dir, phen_code, output_dir, p_threshold=(5e-8)/1060):
 
     # Read GWAS summary statistic file
+    print("1. Reading GWAS summary statistic file...")
     sumstat_df = pd.read_csv(
         sumstat_path,
         sep="\t",
@@ -196,6 +196,7 @@ def main(sumstat_path, ld_dir, output_dir, p_threshold=(5e-8)/1060):
 
     # Get chromosomes
     chrom = sumstat_df["chr"].dropna().unique()
+    print(f"2. {len(chrom)} chromosome(s) with at least one significant variant identified:", chrom)
 
     # Initialize output dataframe
     out_df = pd.DataFrame()
@@ -205,16 +206,20 @@ def main(sumstat_path, ld_dir, output_dir, p_threshold=(5e-8)/1060):
 
     # Loop through chromosomes
     for c in chrom:
+        print(f"3. Processing chromosome {c}...")
         chr_df = sumstat_df[sumstat_df["chr"] == c].copy()
 
         # Get significant SNPs and sort them
         sorted_sig_df = chr_df[chr_df["dominance_pval"] < p_threshold].sort_values("dominance_pval", ascending=True).copy()
+        print(f"{len(sorted_sig_df)} significant SNPs (p < {p_threshold}) are found.")
         
         # Initialize variables
         indep_sig_snps = []
         stage1_clumped = set()
+        r4_threshold_1=(0.6)**2
 
         # Stage 1 clumping: loop through significant SNPs
+        print(f"4. Identifying independent significant SNPs at r4 < {r4_threshold_1} and\n their LD blocks based on SNPs with p<0.05.")
         for _, row in sorted_sig_df.iterrows():
             snp = row['variant']
             if snp in stage1_clumped:
@@ -222,18 +227,21 @@ def main(sumstat_path, ld_dir, output_dir, p_threshold=(5e-8)/1060):
                 
             indep_sig_snps.append(snp)
             
-            # Find all other SNPs in LD (r2 >= 0.6) to clump them
-            snps_df, snps_set = get_SNPs_in_LD(chr_df, ld_dir, snp, r4_threshold=(0.6)**2, p_threshold=0.05)
+            # Find all other SNPs in LD to clump them
+            snps_df, snps_set = get_SNPs_in_LD(chr_df, ld_dir, snp, r4_threshold_1, p_threshold=0.05)
             indep_df = pd.concat([indep_df, snps_df])
             stage1_clumped.update(snps_set)
 
+        print(f"5. {len(indep_sig_snps)} independent significant SNPs are found and LD boundaries are identified.")
 
-        # Stage 2 clumping : Define Lead SNPs (r2 < 0.1)
+        # Stage 2 clumping : Define Lead SNPs
         stage2_df = chr_df[chr_df['variant'].isin(indep_sig_snps)].sort_values('dominance_pval')
        
         lead_snps = []
         stage2_clumped = set()
+        r4_threshold_2=(0.1)**2
 
+        print(f"6. Identifying lead SNPs at r4 < {r4_threshold_2}")
         for _, row in stage2_df.iterrows():
             snp = row['variant']
             if snp in stage2_clumped:
@@ -241,19 +249,24 @@ def main(sumstat_path, ld_dir, output_dir, p_threshold=(5e-8)/1060):
                 
             lead_snps.append(snp)
 
-            # Find all other SNPs in LD (r2 >= 0.1) to clump them
-            snps_df, snps_set = get_SNPs_in_LD(stage2_df, ld_dir, snp, r4_threshold=(0.1)**2, p_threshold=0.05)
+            # Find all other SNPs in LD to clump them
+            snps_df, snps_set = get_SNPs_in_LD(stage2_df, ld_dir, snp, r4_threshold_2, p_threshold=0.05)
             lead_df = pd.concat([lead_df, snps_df])
             stage2_clumped.update(snps_set)
         
+        print(f"{len(lead_snps)} lead  SNPs are found.")
+
     # Merging the loci closer than 250 kb
+    print("7. Merging the identified indepent LD blocks around the independent SNPs\n if the blocks are closer than 250 kb")
     out_df = merge_ld_blocks(indep_df, lead_df)
    
     # Save files
-    #out_path = f"{output_dir}/{phen_name}_sig_loci.tsv.bgz"
-    #out_df.to_csv(out_path, sep="\t", compression="gzip", index=False)
-    out_path = f"{output_dir}/{phen_name}_sig_loci.xlsx"
-    out_df.to_excel(out_path, index=False)
+    print("10. Saving files...")
+    out_path = f"{output_dir}/{phen_code}_sig_loci.tsv"
+    out_df.to_csv(out_path, sep="\t", index=False)
+    #out_path = f"{output_dir}/{phen_name}_sig_loci.xlsx"
+    #out_df.to_excel(out_path, index=False)
+    print(f"Processing for {phen_code} is done!")
 
 
 # ==========================================
@@ -261,17 +274,31 @@ def main(sumstat_path, ld_dir, output_dir, p_threshold=(5e-8)/1060):
 
 if __name__ == "__main__":
     
-    """# Check if a task ID was passed from the terminal
+    # Check if a task ID was passed from the terminal
     if len(sys.argv) < 2:
         print("Error: missing arguments")
         sys.exit(1)
 
-    sumstat_path = sys.argv[1]
-    ld_dir = sys.argv[2]  
-    out_dir = sys.argv[3]"""
+    task_id = int(sys.argv[1]) - 1
+    phen_codes = sys.argv[2]
+    ld_dir = sys.argv[3]  
+    sumstats_dir = sys.argv[4]
+    out_dir = sys.argv[5]
     
-    sumstat_path="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sumstats_QCed/20002_1473_sig_SNPs.tsv.bgz"
-    ld_dir= "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/ld_files"
-    out_dir= "/Users/sezgi/Documents/dominance_pleiotropy/loci_level"
+    phen_list = pd.read_excel(phen_codes, usecols=["phenotype_code"])["phenotype_code"].sort_values(ascending=True).tolist()
 
-    main(sumstat_path, ld_dir, out_dir)
+    if task_id < 0 or task_id >= len(phen_list):
+        print(f"Stopping execution: task_id {task_id} is out of bounds (phenotype list size is {len(phen_list)}).")
+        sys.exit(0)
+
+    sumstat_path =f"{sumstats_dir}/{phen_list[task_id]}_sig_SNPs.tsv.bgz"
+
+    print(f"Process starts for phenotype {phen_list[task_id]}")
+    main(sumstat_path, ld_dir, phen_list[task_id], out_dir)
+
+    # sumstat_path="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sumstats_QCed/20002_1473_sig_SNPs.tsv.bgz"
+    # phen_code="20002_1473"
+    # ld_dir= "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/ld_files"
+    # out_dir= "/Users/sezgi/Documents/dominance_pleiotropy/loci_level"
+    # main(sumstat_path, ld_dir, phen_code, out_dir)
+
