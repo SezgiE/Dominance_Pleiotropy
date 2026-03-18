@@ -113,11 +113,7 @@ def merge_ld_blocks(indep_df, lead_df,  merge_window=250):
     
     merged_df = indep_df.merge(lead_df, on="variant", how="left").copy()
     merged_df["lead_status"] = merged_df["lead_status"].fillna(False).astype(bool)
-
-    variant_to_lead_mapping = merged_df.set_index('variant')['lead_id']
-    merged_df['lead_id'] = merged_df['lead_id'].fillna(
-        merged_df['indep_id'].map(variant_to_lead_mapping)
-    )
+    merged_df["lead_id"] = merged_df.groupby(["chr", "indep_id"])["lead_id"].transform("first")
 
     merged_df = merged_df.sort_values(by=["chr", "pos"])
     merged_df = merged_df.reset_index(drop=True)
@@ -275,30 +271,30 @@ def main(sumstat_path, ld_dir, phen_code, output_dir, p_threshold=(5e-8)/1060):
 if __name__ == "__main__":
     
     # Check if a task ID was passed from the terminal
-    if len(sys.argv) < 2:
-        print("Error: missing arguments")
-        sys.exit(1)
+    # if len(sys.argv) < 2:
+    #     print("Error: missing arguments")
+    #     sys.exit(1)
 
-    task_id = int(sys.argv[1]) - 1
-    phen_codes = sys.argv[2]
-    ld_dir = sys.argv[3]  
-    sumstats_dir = sys.argv[4]
-    out_dir = sys.argv[5]
+    # task_id = int(sys.argv[1]) - 1
+    # phen_codes = sys.argv[2]
+    # ld_dir = sys.argv[3]  
+    # sumstats_dir = sys.argv[4]
+    # out_dir = sys.argv[5]
     
-    phen_list = pd.read_excel(phen_codes, usecols=["phenotype_code"])["phenotype_code"].sort_values(ascending=True).tolist()
+    # phen_list = pd.read_excel(phen_codes, usecols=["phenotype_code"])["phenotype_code"].sort_values(ascending=True).tolist()
 
-    if task_id < 0 or task_id >= len(phen_list):
-        print(f"Stopping execution: task_id {task_id} is out of bounds (phenotype list size is {len(phen_list)}).")
-        sys.exit(0)
+    # if task_id < 0 or task_id >= len(phen_list):
+    #     print(f"Stopping execution: task_id {task_id} is out of bounds (phenotype list size is {len(phen_list)}).")
+    #     sys.exit(0)
 
-    sumstat_path =f"{sumstats_dir}/{phen_list[task_id]}_sig_SNPs.tsv.bgz"
+    # sumstat_path =f"{sumstats_dir}/{phen_list[task_id]}_sig_SNPs.tsv.bgz"
 
-    print(f"Process starts for phenotype {phen_list[task_id]}")
-    main(sumstat_path, ld_dir, phen_list[task_id], out_dir)
+    # print(f"Process starts for phenotype {phen_list[task_id]}")
+    # main(sumstat_path, ld_dir, phen_list[task_id], out_dir)
 
-    # sumstat_path="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sumstats_QCed/20002_1473_sig_SNPs.tsv.bgz"
-    # phen_code="20002_1473"
-    # ld_dir= "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/ld_files"
-    # out_dir= "/Users/sezgi/Documents/dominance_pleiotropy/loci_level"
-    # main(sumstat_path, ld_dir, phen_code, out_dir)
+    sumstat_path="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sumstats_QCed/M72_sig_SNPs.tsv.bgz"
+    phen_code="M72"
+    ld_dir= "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/ld_files"
+    out_dir= "/Users/sezgi/Documents/dominance_pleiotropy/loci_level"
+    main(sumstat_path, ld_dir, phen_code, out_dir)
 
