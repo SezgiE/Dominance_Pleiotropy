@@ -34,7 +34,8 @@ def get_SNPs_in_LD(chr_sumstat_df, ld_dir, snp, r4_threshold, p_threshold=0.05):
             
     if not matching_chunks:
         print(f"Error: No LD chunks containing position {pos} in chromosome {chrom} found.")
-        return pd.DataFrame(), set()
+        error_code = "Error: No LD chunks are available."
+        return pd.DataFrame(), set(), error_code
     
     master_pos_to_r = {}
     
@@ -95,12 +96,17 @@ def get_SNPs_in_LD(chr_sumstat_df, ld_dir, snp, r4_threshold, p_threshold=0.05):
     result_df['indep_id'] = snp
     result_df['r4'] = result_df['pos'].map(master_pos_to_r)
     result_df = result_df.sort_values(by='pos').reset_index(drop=True)
+
+    error_code = "No errors."
     
-    return result_df, set(ld_snps)
+    return result_df, set(ld_snps), error_code
 
 
 def merge_ld_blocks(indep_df, lead_df,  merge_window=250):
     """Merges LD blocks closer than merge_window(kb)"""
+
+    if indep_df.empty:
+        return indep_df
 
     merge_window_kb = merge_window*1000
 
@@ -198,6 +204,7 @@ def main(sumstat_path, ld_dir, phen_code, output_dir, p_threshold=(5e-8)/1060):
     out_df = pd.DataFrame()
     indep_df = pd.DataFrame()
     lead_df = pd.DataFrame()
+    log_info_list = []
 
 
     # Loop through chromosomes
@@ -205,34 +212,41 @@ def main(sumstat_path, ld_dir, phen_code, output_dir, p_threshold=(5e-8)/1060):
         print(f"3. Processing chromosome {c}...")
         chr_df = sumstat_df[sumstat_df["chr"] == c].copy()
 
-        # Get significant SNPs and sort them
+
+        # Stage 1 clumping: loop through significant SNPs
         sorted_sig_df = chr_df[chr_df["dominance_pval"] < p_threshold].sort_values("dominance_pval", ascending=True).copy()
         print(f"{len(sorted_sig_df)} significant SNPs (p < {p_threshold}) are found.")
-        
+
         # Initialize variables
+        no_ld_snps = 0
         indep_sig_snps = []
         stage1_clumped = set()
         r4_threshold_1=(0.6)**2
 
-        # Stage 1 clumping: loop through significant SNPs
         print(f"4. Identifying independent significant SNPs at r4 < {r4_threshold_1} and\n their LD blocks based on SNPs with p<0.05.")
         for _, row in sorted_sig_df.iterrows():
             snp = row['variant']
             if snp in stage1_clumped:
                 continue
-                
-            indep_sig_snps.append(snp)
             
             # Find all other SNPs in LD to clump them
-            snps_df, snps_set = get_SNPs_in_LD(chr_df, ld_dir, snp, r4_threshold_1, p_threshold=0.05)
+            snps_df, snps_set, error_info = get_SNPs_in_LD(chr_df, ld_dir, snp, r4_threshold_1, p_threshold=0.05)
+
+            if error_info == "Error: No LD chunks are available.":
+                no_ld_snps += 1   
+                continue
+
+            indep_sig_snps.append(snp)
             indep_df = pd.concat([indep_df, snps_df])
             stage1_clumped.update(snps_set)
 
         print(f"5. {len(indep_sig_snps)} independent significant SNPs are found and LD boundaries are identified.")
 
+
         # Stage 2 clumping : Define Lead SNPs
         stage2_df = chr_df[chr_df['variant'].isin(indep_sig_snps)].sort_values('dominance_pval')
-       
+
+        # Initialize variables
         lead_snps = []
         stage2_clumped = set()
         r4_threshold_2=(0.1)**2
@@ -246,23 +260,61 @@ def main(sumstat_path, ld_dir, phen_code, output_dir, p_threshold=(5e-8)/1060):
             lead_snps.append(snp)
 
             # Find all other SNPs in LD to clump them
-            snps_df, snps_set = get_SNPs_in_LD(stage2_df, ld_dir, snp, r4_threshold_2, p_threshold=0.05)
+            snps_df, snps_set, error_info = get_SNPs_in_LD(stage2_df, ld_dir, snp, r4_threshold_2, p_threshold=0.05)
             lead_df = pd.concat([lead_df, snps_df])
             stage2_clumped.update(snps_set)
-        
+
         print(f"{len(lead_snps)} lead  SNPs are found.")
+
+
+        # Appending log information for each chr
+        log_row = {
+            "phenotype_code": phen_code,
+            "chr": c, 
+            "Total_SNPs": len(chr_df), 
+            "Total_sig_SNPs": len(sorted_sig_df), 
+            "Covered_sig_SNPs": len(sorted_sig_df)-no_ld_snps, 
+            "Missing_sig_SNPs": no_ld_snps, 
+            "Independent_SNPs": len(indep_sig_snps), 
+            "Lead_SNPs": len(lead_snps)
+              }
+
+        log_info_list.append(log_row)
+
 
     # Merging the loci closer than 250 kb
     print("7. Merging the identified indepent LD blocks around the independent SNPs\n if the blocks are closer than 250 kb")
     out_df = merge_ld_blocks(indep_df, lead_df)
+
+    if out_df.empty:
+        print(f"Warning: No results available for the for phenotype {phen_code} due to no valid LD information for any of the significant SNPs for this phenotype.")
+        return
+    
+
+    # Printing log info
+    log_info = pd.DataFrame(log_info_list)
+    if not log_info.empty:
+        columns_to_exclude = ['phenotype_code', 'chr']
+        total_sums = log_info.drop(columns=columns_to_exclude).sum()
+        total_row = total_sums.to_dict()
+        total_row['phenotype_code'] = phen_code
+        total_row['chr'] = 'Total'
+        log_info.loc[len(log_info)] = total_row
+
+    print(f"Phenotype {phen_code} analysis summary:\n")
+    print(log_info)
    
+
     # Save files
     print("10. Saving files...")
+    log_path = f"{output_dir}/{phen_code}_sig_loci.log"
+    log_info.to_csv(log_path, sep="\t", index=False)
+
     out_path = f"{output_dir}/{phen_code}_sig_loci.tsv"
     out_df.to_csv(out_path, sep="\t", index=False)
-    #out_path = f"{output_dir}/{phen_name}_sig_loci.xlsx"
-    #out_df.to_excel(out_path, index=False)
+
     print(f"Processing for {phen_code} is done!")
+    return
 
 
 # ==========================================
@@ -275,17 +327,25 @@ if __name__ == "__main__":
     #     print("Error: missing arguments")
     #     sys.exit(1)
 
+    # print("all good")
+
     # task_id = int(sys.argv[1]) - 1
     # phen_codes = sys.argv[2]
     # ld_dir = sys.argv[3]  
     # sumstats_dir = sys.argv[4]
     # out_dir = sys.argv[5]
+
+    # print("all good 2")
     
     # phen_list = pd.read_excel(phen_codes, usecols=["phenotype_code"])["phenotype_code"].sort_values(ascending=True).tolist()
+
+    # print("all good 3")
 
     # if task_id < 0 or task_id >= len(phen_list):
     #     print(f"Stopping execution: task_id {task_id} is out of bounds (phenotype list size is {len(phen_list)}).")
     #     sys.exit(0)
+
+    # print("all good 4")
 
     # sumstat_path =f"{sumstats_dir}/{phen_list[task_id]}_sig_SNPs.tsv.bgz"
 
