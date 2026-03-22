@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=get_loci
-#SBATCH --time=01:00:00
-#SBATCH --array=1-85%85
+#SBATCH --time=01:15:00
+#SBATCH --array=1-75%25
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16        
 #SBATCH --mem=28G               

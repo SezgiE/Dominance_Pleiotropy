@@ -116,6 +116,8 @@ def merge_ld_blocks(indep_df, lead_df,  merge_window=250):
         "indep_id": "lead_id", 
         "r4": "r4_lead"
     })
+
+    lead_df = lead_df.sort_values(by='r4_lead', ascending=False).drop_duplicates(subset=['variant'], keep='first')
     
     merged_df = indep_df.merge(lead_df, on="variant", how="left").copy()
     merged_df["lead_status"] = merged_df["lead_status"].fillna(False).astype(bool)
@@ -322,7 +324,7 @@ def main(sumstat_path, ld_dir, phen_code, output_dir, p_threshold=(5e-8)/1060):
 
 if __name__ == "__main__":
     
-    # Check if a task ID was passed from the terminal
+    # # Check if a task ID was passed from the terminal
     # if len(sys.argv) < 2:
     #     print("Error: missing arguments")
     #     sys.exit(1)
@@ -352,9 +354,8 @@ if __name__ == "__main__":
     # print(f"Process starts for phenotype {phen_list[task_id]}")
     # main(sumstat_path, ld_dir, phen_list[task_id], out_dir)
 
-    sumstat_path="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sumstats_QCed/M72_sig_SNPs.tsv.bgz"
-    phen_code="M72"
+    sumstat_path="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sumstats_QCed/1747_2_sig_SNPs.tsv.bgz"
+    phen_code="1747_2"
     ld_dir= "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/ld_files"
     out_dir= "/Users/sezgi/Documents/dominance_pleiotropy/loci_level"
     main(sumstat_path, ld_dir, phen_code, out_dir)
-
