@@ -218,6 +218,7 @@ def main(sumstat_path, ld_dir, phen_code, output_dir, p_threshold=(5e-8)/1060):
         # Stage 1 clumping: loop through significant SNPs
         sorted_sig_df = chr_df[chr_df["dominance_pval"] < p_threshold].sort_values("dominance_pval", ascending=True).copy()
         print(f"{len(sorted_sig_df)} significant SNPs (p < {p_threshold}) are found.")
+        print(sorted_sig_df.head())
 
         # Initialize variables
         no_ld_snps = 0
@@ -354,8 +355,8 @@ if __name__ == "__main__":
     # print(f"Process starts for phenotype {phen_list[task_id]}")
     # main(sumstat_path, ld_dir, phen_list[task_id], out_dir)
 
-    sumstat_path="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sumstats_QCed/1747_2_sig_SNPs.tsv.bgz"
-    phen_code="1747_2"
+    sumstat_path="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sumstats_QCed/30840_irnt_sig_SNPs.tsv.bgz"
+    phen_code="30840"
     ld_dir= "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/ld_files"
     out_dir= "/Users/sezgi/Documents/dominance_pleiotropy/loci_level"
     main(sumstat_path, ld_dir, phen_code, out_dir)
