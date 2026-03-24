@@ -13,8 +13,10 @@ def get_data(phen_code, sumstat_dir, loci_dir):
     """Gets and merges locus data."""
 
     raw_df = pd.read_csv(f"{sumstat_dir}/{phen_code}_sig_SNPs.tsv.bgz", sep='\t', compression='gzip')
+
+
     loci_df = pd.read_csv(f"{loci_dir}/{phen_code}_sig_loci.tsv", sep='\t', 
-                          usecols=["variant", "indep_status", "indep_id", "r4", 
+                          usecols=["variant", "neg_log10_pval","indep_status", "indep_id", "r4", 
                                    "lead_status", "lead_id","r4_lead",  "indep_start", 
                                    "indep_end", "ld_start", "ld_end", "ld_id"])
     
@@ -77,7 +79,14 @@ def plot_regional_association(plot_df, genes_df, phen_code, phen_name, output_di
     n_blocks = len(unique_blocks)
     print(f"Found {len(unique_blocks)} unique loci to plot.")
 
-    plot_df["-log10P"] = -np.log10(plot_df['dominance_pval'])
+    plot_df = plot_df.sort_values("neg_log10_pval", ascending=False).reset_index(drop=True)
+    
+    lowest_valid_p = plot_df.loc[plot_df["dominance_pval"] != 0, "neg_log10_pval"].max()
+    plot_df["-log10_plotting"] = np.where(
+        plot_df["dominance_pval"] == 0, 
+        lowest_valid_p + (plot_df["neg_log10_pval"] / 100),
+        -np.log10(plot_df["dominance_pval"])
+    )
 
     ncols = 2  # Set to 1 for a single vertical column, 2 or 3 for a grid
     nrows = int(np.ceil(n_blocks / ncols))
@@ -151,7 +160,7 @@ def plot_regional_association(plot_df, genes_df, phen_code, phen_name, output_di
         scatter_df = window_df[(window_df['indep_status'] != True) & (window_df['lead_status'] != True)]
         ax_main.scatter(
             scatter_df['pos'] / 1e6, # Convert to Megabases for clean X-axis labels
-            scatter_df['-log10P'],
+            scatter_df['-log10_plotting'],
             c=scatter_df['color'],
             edgecolors='white',
             linewidths=0.1,
@@ -165,7 +174,7 @@ def plot_regional_association(plot_df, genes_df, phen_code, phen_name, output_di
         if not lead_row.empty:
             ax_main.scatter(
                 lead_row['pos'] / 1e6,
-                lead_row['-log10P'],
+                lead_row['-log10_plotting'],
                 c='#9400D3',
                 marker='D',          
                 edgecolors='black',
@@ -178,7 +187,7 @@ def plot_regional_association(plot_df, genes_df, phen_code, phen_name, output_di
         for _, row in lead_row.iterrows():
             ax_main.annotate(
                 row['rsid'],
-                xy=(row['pos'] / 1e6, row['-log10P']),
+                xy=(row['pos'] / 1e6, row['-log10_plotting']),
                 xytext=(4, 4),   # Offset the text 4 points right and 4 points up
                 textcoords="offset points",
                 fontsize=6,
@@ -203,7 +212,7 @@ def plot_regional_association(plot_df, genes_df, phen_code, phen_name, output_di
         if not indep_row.empty:
             ax_main.scatter(
                 indep_row['pos'] / 1e6,
-                indep_row['-log10P'],
+                indep_row['-log10_plotting'],
                 c=indep_row['color_indep'],      
                 marker='^',          
                 edgecolors='black',
@@ -226,7 +235,12 @@ def plot_regional_association(plot_df, genes_df, phen_code, phen_name, output_di
             mpatches.Patch(color='#5CB85C', label=r'$0.4 \leq r^4 < 0.6$'),
             mpatches.Patch(color='#5BC0DE', label=r'$0.2 \leq r^4 < 0.4$'),
             mpatches.Patch(color='#357EBD', label=r'$0.0 \leq r^4 < 0.2$'),
-            
+            mpatches.Patch(color='none', label=' '),mpatches.Patch(color='none', label=' '),
+            mpatches.Patch(color='none', label=' '),mpatches.Patch(color='none', label=' '),
+            mpatches.Patch(color='none', label=' '),mpatches.Patch(color='none', label=' '),
+            mpatches.Patch(color='none', label=' '),
+            plt.Line2D([0], [0], color='black', linestyle='--', linewidth=0.8, 
+                       label=r'$P = 4.7 \times 10^{-11}$')
         ]
 
         if indep_row.empty:
@@ -235,7 +249,7 @@ def plot_regional_association(plot_df, genes_df, phen_code, phen_name, output_di
         elif not indep_row.empty:
             ld_title = 'LD to Independent SNP'
 
-        # Lead SNP color legend
+            # Lead SNP color legend
             cmap_colors = [
                 lighten_color(lead_color, amount=0.8), 
                 lighten_color(lead_color, amount=0.5), 
@@ -243,42 +257,51 @@ def plot_regional_association(plot_df, genes_df, phen_code, phen_name, output_di
                 ]
             custom_cmap = mcolors.LinearSegmentedColormap.from_list("indep_purple", cmap_colors)
 
-            cax = ax_main.inset_axes([1.089, 0.30, 0.065998, 0.029]) 
+            cax = ax_main.inset_axes([1.089, 0.39, 0.0475, 0.029]) 
             
             norm = mcolors.Normalize(vmin=0.01, vmax=0.30) 
             cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=custom_cmap),
                             cax=cax, orientation='horizontal')
             cb.set_ticks([])
             cb.outline.set_linewidth(0)
-            cax.text(1.34, 0.5, r'$0.01 \leq r^4 < 0.36$', size=6, 
+            cax.text(1.3, 0.5, r'$0.01 \leq r^4 < 0.36$', size=6, 
                     transform=cax.transAxes, ha='left', va='center')
-            cax.text(-0.64, 1.8, 'LD to Lead SNP', fontsize=7, 
+            cax.text(-0.42, 1.8, 'LD to Lead SNP', fontsize=7, 
                     transform=cax.transAxes, ha='left', va='bottom')
 
 
         ax_main.legend( handles=ld_legend,loc='upper left',
-                bbox_to_anchor=(1.02, 1),frameon=False,
+                bbox_to_anchor=(1.05, 1),frameon=False,
                 title=ld_title,
                 fontsize=6,
                 title_fontsize=7
                 )
 
         plt.setp(ax_main.get_xticklabels(), visible=False)
-        y_levels = [0, 1, 2]
+        y_levels = [0, 1, 2, 3]
         current_level = 0
 
 
-        for _, gene in window_genes.iterrows():
+        # Define minimum size threshold in base pairs
+        min_gene_size_bp = 10000 
+        
+        # Filter the dataframe to ONLY include genes larger than the threshold
+        filtered_genes = window_genes[(window_genes['end'] - window_genes['start']) > min_gene_size_bp]
+
+        for _, gene in filtered_genes.iterrows():
             g_start = max(gene['start'], plot_start) / 1e6
             g_end = min(gene['end'], plot_end) / 1e6
             g_center = (g_start + g_end) / 2
             
+            # Draw the line and the text for the filtered genes
             ax_gene.plot([g_start, g_end], [current_level, current_level], 
-                         color='#333333', linewidth=2, solid_capstyle='butt')
+                         color='#2C308B', linewidth=2, solid_capstyle='butt')
             ax_gene.text(g_center, current_level + 0.2, gene['gene_name'], 
-                         fontsize=6, fontstyle='italic', ha='center', va='bottom', color='black')
+                         fontsize=4, fontstyle='italic', ha='center', va='bottom', color='black')
             
+            # Increment the level
             current_level = y_levels[(y_levels.index(current_level) + 1) % len(y_levels)]
+
 
         ax_gene.set_xlabel(f'Chromosome {chrom} Position (Mb)', fontweight='bold')
         ax_gene.set_xlim(plot_start / 1e6, plot_end / 1e6)
@@ -313,6 +336,7 @@ if __name__ == "__main__":
     out_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/loci_plots"
 
     traits = pd.read_excel(phen_dict_path, usecols=["phenotype_code", "description"])
+    #traits = traits[traits["phenotype_code"] == "1747_2"]
 
 
 

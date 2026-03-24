@@ -4,6 +4,7 @@ import glob
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from scipy.stats import norm
 
 
 def get_SNPs_in_LD(chr_sumstat_df, ld_dir, snp, r4_threshold, p_threshold=0.05):
@@ -198,6 +199,9 @@ def main(sumstat_path, ld_dir, phen_code, output_dir, p_threshold=(5e-8)/1060):
         }
     )
 
+    sumstat_df['z_score'] = sumstat_df['dominance_beta'] / sumstat_df['dominance_se']
+    sumstat_df['neg_log10_pval'] = -(norm.logsf(np.abs(sumstat_df['z_score'])) + np.log(2)) / np.log(10)
+
     # Get chromosomes
     chrom = sumstat_df["chr"].dropna().unique()
     print(f"2. {len(chrom)} chromosome(s) with at least one significant variant identified:", chrom)
@@ -216,9 +220,11 @@ def main(sumstat_path, ld_dir, phen_code, output_dir, p_threshold=(5e-8)/1060):
 
 
         # Stage 1 clumping: loop through significant SNPs
-        sorted_sig_df = chr_df[chr_df["dominance_pval"] < p_threshold].sort_values("dominance_pval", ascending=True).copy()
+        sorted_sig_df = chr_df[chr_df["dominance_pval"] < p_threshold] \
+            .sort_values("neg_log10_pval", ascending=False) \
+            .copy()   
+
         print(f"{len(sorted_sig_df)} significant SNPs (p < {p_threshold}) are found.")
-        print(sorted_sig_df.head())
 
         # Initialize variables
         no_ld_snps = 0
@@ -229,6 +235,7 @@ def main(sumstat_path, ld_dir, phen_code, output_dir, p_threshold=(5e-8)/1060):
         print(f"4. Identifying independent significant SNPs at r4 < {r4_threshold_1} and\n their LD blocks based on SNPs with p<0.05.")
         for _, row in sorted_sig_df.iterrows():
             snp = row['variant']
+            print(snp)
             if snp in stage1_clumped:
                 continue
             
@@ -247,8 +254,7 @@ def main(sumstat_path, ld_dir, phen_code, output_dir, p_threshold=(5e-8)/1060):
 
 
         # Stage 2 clumping : Define Lead SNPs
-        stage2_df = chr_df[chr_df['variant'].isin(indep_sig_snps)].sort_values('dominance_pval')
-
+        stage2_df = chr_df[chr_df['variant'].isin(indep_sig_snps)].sort_values("neg_log10_pval", ascending=False).copy()
         # Initialize variables
         lead_snps = []
         stage2_clumped = set()
@@ -355,8 +361,8 @@ if __name__ == "__main__":
     # print(f"Process starts for phenotype {phen_list[task_id]}")
     # main(sumstat_path, ld_dir, phen_list[task_id], out_dir)
 
-    sumstat_path="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sumstats_QCed/30840_irnt_sig_SNPs.tsv.bgz"
-    phen_code="30840"
+    sumstat_path="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sumstats_QCed/1747_2_sig_SNPs.tsv.bgz"
+    phen_code="1747_2"
     ld_dir= "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/ld_files"
     out_dir= "/Users/sezgi/Documents/dominance_pleiotropy/loci_level"
     main(sumstat_path, ld_dir, phen_code, out_dir)
