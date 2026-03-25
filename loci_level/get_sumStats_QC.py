@@ -6,6 +6,7 @@ import subprocess
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from scipy.stats import norm
 
 
 def load_wget_commands(add_file_path, dom_file_path, sig_phen_path):
@@ -156,6 +157,13 @@ def preprocess_sumstats(file_add, file_dom, file_var_info, file_out, code, maf_t
     data_out = data_filtered[data_filtered["chr"].isin(sig_chromosomes)].copy()
     data_out[str(code)] = data_out["add_sig"] + data_out["dom_sig"]
 
+    # Re-calculating p-values on -log10 base
+    data_out['add_z_score'] = data_out['beta'] / data_out['se']
+    data_out['add_log10_pval'] = -(norm.logsf(np.abs(data_out['add_z_score'])) + np.log(2)) / np.log(10)
+
+    data_out['dom_z_score'] = data_out['dominance_beta'] / data_out['dominance_se']
+    data_out['dom_log10_pval'] = -(norm.logsf(np.abs(data_out['dom_z_score'])) + np.log(2)) / np.log(10)
+
     # Write to a gzipped file
     data_out.to_csv(file_out, sep="\t", index=False, compression="gzip")
 
@@ -228,12 +236,10 @@ if __name__ == "__main__":
         print("Usage: python script.py <task_index>")
         sys.exit(1)
 
-    # SLURM arrays usually start at 1, but Python lists start at 0.
-    # We subtract 1 to align them perfectly.
     task_index = int(sys.argv[1]) - 1
-    tmp_dir = sys.argv[2]  # Grab the scratch path from bash
-    out_dir = sys.argv[3]  # Grab the final save path from bash
-    p_threshold = float(sys.argv[4])  # Grab the p-value threshold from bash
+    tmp_dir = sys.argv[2] 
+    out_dir = sys.argv[3]  
+    p_threshold = float(sys.argv[4])
     
     if p_threshold is None:
         p_threshold = (5e-8)/1060  # Default corrected

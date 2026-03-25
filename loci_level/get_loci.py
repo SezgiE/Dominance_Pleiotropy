@@ -3,8 +3,6 @@ import sys
 import glob
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from scipy.stats import norm
 
 
 def get_SNPs_in_LD(chr_sumstat_df, ld_dir, snp, r4_threshold, p_threshold=0.05):
@@ -195,12 +193,12 @@ def main(sumstat_path, ld_dir, phen_code, output_dir, p_threshold=(5e-8)/1060):
         dtype={"variant":str, "rsid":str, "chr":int, "pos":int,
             "minor_AF":float, "low_confidence_variant":str, "N": int,
             "beta":float, "pval":float, "dominance_beta":float,
-            "dominance_pval":float, "add_sig":int, "dom_sig":int
+            "dominance_pval":float, "add_sig":int, "dom_sig":int,
+            "add_z_score":float, "add_log10_pval":float, "dom_z_score":float,
+            "dom_log10_pval":float
         }
     )
 
-    sumstat_df['z_score'] = sumstat_df['dominance_beta'] / sumstat_df['dominance_se']
-    sumstat_df['neg_log10_pval'] = -(norm.logsf(np.abs(sumstat_df['z_score'])) + np.log(2)) / np.log(10)
 
     # Get chromosomes
     chrom = sumstat_df["chr"].dropna().unique()
@@ -221,7 +219,7 @@ def main(sumstat_path, ld_dir, phen_code, output_dir, p_threshold=(5e-8)/1060):
 
         # Stage 1 clumping: loop through significant SNPs
         sorted_sig_df = chr_df[chr_df["dominance_pval"] < p_threshold] \
-            .sort_values("neg_log10_pval", ascending=False) \
+            .sort_values("dom_log10_pval", ascending=False) \
             .copy()   
 
         print(f"{len(sorted_sig_df)} significant SNPs (p < {p_threshold}) are found.")
@@ -230,12 +228,11 @@ def main(sumstat_path, ld_dir, phen_code, output_dir, p_threshold=(5e-8)/1060):
         no_ld_snps = 0
         indep_sig_snps = []
         stage1_clumped = set()
-        r4_threshold_1=(0.6)**2
+        r4_threshold_1=0.6
 
         print(f"4. Identifying independent significant SNPs at r4 < {r4_threshold_1} and\n their LD blocks based on SNPs with p<0.05.")
         for _, row in sorted_sig_df.iterrows():
             snp = row['variant']
-            print(snp)
             if snp in stage1_clumped:
                 continue
             
@@ -254,11 +251,11 @@ def main(sumstat_path, ld_dir, phen_code, output_dir, p_threshold=(5e-8)/1060):
 
 
         # Stage 2 clumping : Define Lead SNPs
-        stage2_df = chr_df[chr_df['variant'].isin(indep_sig_snps)].sort_values("neg_log10_pval", ascending=False).copy()
+        stage2_df = chr_df[chr_df['variant'].isin(indep_sig_snps)].sort_values("dom_log10_pval", ascending=False).copy()
         # Initialize variables
         lead_snps = []
         stage2_clumped = set()
-        r4_threshold_2=(0.1)**2
+        r4_threshold_2=0.1
 
         print(f"6. Identifying lead SNPs at r4 < {r4_threshold_2}")
         for _, row in stage2_df.iterrows():

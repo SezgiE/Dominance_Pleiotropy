@@ -16,7 +16,7 @@ def get_data(phen_code, sumstat_dir, loci_dir):
 
 
     loci_df = pd.read_csv(f"{loci_dir}/{phen_code}_sig_loci.tsv", sep='\t', 
-                          usecols=["variant", "neg_log10_pval","indep_status", "indep_id", "r4", 
+                          usecols=["variant","indep_status", "indep_id", "r4", 
                                    "lead_status", "lead_id","r4_lead",  "indep_start", 
                                    "indep_end", "ld_start", "ld_end", "ld_id"])
     
@@ -25,6 +25,16 @@ def get_data(phen_code, sumstat_dir, loci_dir):
         sys.exit(0)
     
     plot_df = raw_df.merge(loci_df, on="variant", how="left")
+    
+    # Remove duplicates
+    indep_pvals = raw_df[['variant', 'dom_log10_pval']].rename(
+        columns={'variant': 'indep_id', 'dom_log10_pval': 'indep_pval'}
+    )
+    
+    plot_df = plot_df.merge(indep_pvals, on='indep_id', how='left')
+    plot_df = plot_df[plot_df['indep_pval'].isna() | (plot_df['indep_pval'] >= plot_df['dom_log10_pval'])]
+    
+    plot_df = plot_df.drop(columns=['indep_pval'])
 
     return plot_df
 
@@ -79,14 +89,14 @@ def plot_regional_association(plot_df, genes_df, phen_code, phen_name, output_di
     n_blocks = len(unique_blocks)
     print(f"Found {len(unique_blocks)} unique loci to plot.")
 
-    plot_df = plot_df.sort_values("neg_log10_pval", ascending=False).reset_index(drop=True)
+    plot_df = plot_df.sort_values("dom_log10_pval", ascending=False).reset_index(drop=True)
     
-    lowest_valid_p = plot_df.loc[plot_df["dominance_pval"] != 0, "neg_log10_pval"].max()
+    lowest_valid_p = plot_df.loc[plot_df["dominance_pval"] != 0, "dom_log10_pval"].max()
     plot_df["-log10_plotting"] = np.where(
         plot_df["dominance_pval"] == 0, 
-        lowest_valid_p + (plot_df["neg_log10_pval"] / 100),
-        -np.log10(plot_df["dominance_pval"])
-    )
+        lowest_valid_p + (plot_df["dom_log10_pval"] / 100),
+        plot_df["dom_log10_pval"]
+        )
 
     ncols = 2  # Set to 1 for a single vertical column, 2 or 3 for a grid
     nrows = int(np.ceil(n_blocks / ncols))
@@ -143,17 +153,17 @@ def plot_regional_association(plot_df, genes_df, phen_code, phen_name, output_di
         # Define standard LocusZoom Color Mapping
         colors = []
         for r4 in window_df['r4']:
-            if r4 >= 0.8: colors.append('#D43F3A')      # Red
-            elif r4 >= 0.6: colors.append('#EEA236')    # Orange
-            elif r4 >= 0.4: colors.append('#5CB85C')    # Green
-            elif r4 >= 0.2: colors.append('#5BC0DE')    # Light Blue
+            if r4 >= 0.9: colors.append('#D43F3A')      # Red
+            elif r4 >= 0.8: colors.append('#EEA236')    # Orange
+            elif r4 >= 0.7: colors.append('#5CB85C')    # Green
+            elif r4 >= 0.6: colors.append('#5BC0DE')    # Light Blue
             elif r4 >= 0.0: colors.append("#357EBD")    # Dark Blue
             else: colors.append('#357EBD')              # Grey (Background)
 
         window_df['color'] = colors
         
         # Sort so the highest correlation SNPs are drawn ON TOP of the grey background
-        window_df = window_df.sort_values('r4')
+        window_df = window_df.sort_values('r4', ascending=False)
         window_df = window_df.drop_duplicates(subset=['variant'], keep='first')
 
         # Plot Background and Proxies
@@ -230,15 +240,15 @@ def plot_regional_association(plot_df, genes_df, phen_code, phen_name, output_di
 
         # 9. Custom LD Legend
         ld_legend = [
-            mpatches.Patch(color='#D43F3A', label=r'$r^4 \geq 0.8$'),
-            mpatches.Patch(color='#EEA236', label=r'$0.6 \leq r^4 < 0.8$'),
-            mpatches.Patch(color='#5CB85C', label=r'$0.4 \leq r^4 < 0.6$'),
-            mpatches.Patch(color='#5BC0DE', label=r'$0.2 \leq r^4 < 0.4$'),
-            mpatches.Patch(color='#357EBD', label=r'$0.0 \leq r^4 < 0.2$'),
+            mpatches.Patch(color='#D43F3A', label=r'$r^4 \geq 0.9$'),
+            mpatches.Patch(color='#EEA236', label=r'$0.8 \leq r^4 < 0.9$'),
+            mpatches.Patch(color='#5CB85C', label=r'$0.7 \leq r^4 < 0.8$'),
+            mpatches.Patch(color='#5BC0DE', label=r'$0.6 \leq r^4 < 0.7$'),
+            mpatches.Patch(color='#357EBD', label=r'$0.0 \leq r^4 < 0.6$'),
             mpatches.Patch(color='none', label=' '),mpatches.Patch(color='none', label=' '),
             mpatches.Patch(color='none', label=' '),mpatches.Patch(color='none', label=' '),
             mpatches.Patch(color='none', label=' '),mpatches.Patch(color='none', label=' '),
-            mpatches.Patch(color='none', label=' '),
+            mpatches.Patch(color='none', label=' '),mpatches.Patch(color='none', label=' '),
             plt.Line2D([0], [0], color='black', linestyle='--', linewidth=0.8, 
                        label=r'$P = 4.7 \times 10^{-11}$')
         ]
@@ -264,7 +274,7 @@ def plot_regional_association(plot_df, genes_df, phen_code, phen_name, output_di
                             cax=cax, orientation='horizontal')
             cb.set_ticks([])
             cb.outline.set_linewidth(0)
-            cax.text(1.3, 0.5, r'$0.01 \leq r^4 < 0.36$', size=6, 
+            cax.text(1.3, 0.5, r'$0.1 \leq r^4 < 0.6$', size=6, 
                     transform=cax.transAxes, ha='left', va='center')
             cax.text(-0.42, 1.8, 'LD to Lead SNP', fontsize=7, 
                     transform=cax.transAxes, ha='left', va='bottom')
@@ -336,8 +346,7 @@ if __name__ == "__main__":
     out_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/loci_plots"
 
     traits = pd.read_excel(phen_dict_path, usecols=["phenotype_code", "description"])
-    #traits = traits[traits["phenotype_code"] == "1747_2"]
-
+    #traits = traits[traits["phenotype_code"] == "2217_irnt"]
 
 
     for index, row in traits.iterrows():
