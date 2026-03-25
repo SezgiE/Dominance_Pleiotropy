@@ -14,6 +14,18 @@ def get_data(phen_code, sumstat_dir, loci_dir):
 
     raw_df = pd.read_csv(f"{sumstat_dir}/{phen_code}_sig_SNPs.tsv.bgz", sep='\t', compression='gzip')
 
+    # Create a mask for  MHC region (Chr 6, 25 Mb - 34 Mb)
+    mhc_mask = (
+        (raw_df['chr'] == 6) & 
+        (raw_df['pos'] >= 25000000) & 
+        (raw_df['pos'] <= 34000000)
+    )
+
+    # Keep everything that is NOT in the mask
+    masked_df = raw_df[~mhc_mask].reset_index(drop=True).copy()
+
+    if masked_df.empty:
+        return None
 
     loci_df = pd.read_csv(f"{loci_dir}/{phen_code}_sig_loci.tsv", sep='\t', 
                           usecols=["variant","indep_status", "indep_id", "r4", 
@@ -22,18 +34,22 @@ def get_data(phen_code, sumstat_dir, loci_dir):
     
     if loci_df.empty:
         print("No loci to plot.")
-        sys.exit(0)
+        return None
     
-    plot_df = raw_df.merge(loci_df, on="variant", how="left")
+    plot_df = masked_df.merge(loci_df, on="variant", how="left")
     
     # Remove duplicates
-    indep_pvals = raw_df[['variant', 'dom_log10_pval']].rename(
+    indep_pvals = masked_df[['variant', 'dom_log10_pval']].rename(
         columns={'variant': 'indep_id', 'dom_log10_pval': 'indep_pval'}
     )
     
     plot_df = plot_df.merge(indep_pvals, on='indep_id', how='left')
     plot_df = plot_df[plot_df['indep_pval'].isna() | (plot_df['indep_pval'] >= plot_df['dom_log10_pval'])]
-    
+
+    group_sizes = plot_df.groupby(['variant', 'lead_id'])['variant'].transform('size')
+    rows_to_drop = (group_sizes > 1) & (plot_df['lead_id'] == plot_df['indep_id'])
+
+    plot_df = plot_df[~rows_to_drop]
     plot_df = plot_df.drop(columns=['indep_pval'])
 
     return plot_df
@@ -88,6 +104,10 @@ def plot_regional_association(plot_df, genes_df, phen_code, phen_name, output_di
     unique_blocks = plot_df['ld_id'].dropna().unique()
     n_blocks = len(unique_blocks)
     print(f"Found {len(unique_blocks)} unique loci to plot.")
+
+    if n_blocks == 0:
+        print(f"No locus to plot for ' {phen_name}'. Skipping...")
+        return None
 
     plot_df = plot_df.sort_values("dom_log10_pval", ascending=False).reset_index(drop=True)
     
@@ -250,8 +270,9 @@ def plot_regional_association(plot_df, genes_df, phen_code, phen_name, output_di
             mpatches.Patch(color='none', label=' '),mpatches.Patch(color='none', label=' '),
             mpatches.Patch(color='none', label=' '),mpatches.Patch(color='none', label=' '),
             plt.Line2D([0], [0], color='black', linestyle='--', linewidth=0.8, 
-                       label=r'$P = 4.7 \times 10^{-11}$')
+                       label=r'$P \approx 4.7 \times 10^{-11}$')
         ]
+
 
         if indep_row.empty:
             ld_title = "LD to Lead SNP"
@@ -321,6 +342,10 @@ def plot_regional_association(plot_df, genes_df, phen_code, phen_name, output_di
         ax_gene.spines['right'].set_visible(False)
         ax_gene.spines['top'].set_visible(False)
 
+        # Turn off the automatic scientific offset
+        ax_main.ticklabel_format(useOffset=False, style='plain', axis='x')
+        ax_gene.ticklabel_format(useOffset=False, style='plain', axis='x')
+
 
     # 10. Save as vector PDF
     fig.suptitle(f"Phenotype: {phen_name}", x=0.05, y=0.98, ha='left', fontsize=14, fontweight='bold')
@@ -356,6 +381,11 @@ if __name__ == "__main__":
 
         try:
             plot_df = get_data(phen_code, sumstat_dir, loci_dir)
+
+            if plot_df is None or plot_df.empty:
+                print(f"No data returned for {phen_code}")
+                continue
+                
         except FileNotFoundError:
             # Skip to the next phenotype if the file/dir doesn't exist
             print(f"No significant loci data for{phen_code} ")
