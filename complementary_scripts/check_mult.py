@@ -148,12 +148,22 @@ def get_data(phen_code, sumstat_dir, loci_dir):
     return masked_df, masked_blocks
 
 
-def run_SuSiE(sumstat_data, unique_blocks, sample_size, phen_code,
-              phen_name, ld_dir, output_dir, buffer_kb=50):
-    
+def run_SuSiE(
+    sumstat_data,
+    unique_blocks,
+    sample_size,
+    phen_code,
+    phen_name,
+    ld_dir,
+    output_dir,
+    buffer_kb=50,
+):
     """Generates LocusZoom-style plots for each unique independent locus."""
 
     os.makedirs(output_dir, exist_ok=True)
+
+    trait_rows = []
+    SNPs = []
 
     for row in unique_blocks.itertuples(index=False):
         chrom = row.chr
@@ -187,50 +197,113 @@ def run_SuSiE(sumstat_data, unique_blocks, sample_size, phen_code,
             .reset_index(drop=True)
         )
 
-        susie_df = susie_df[["dom_z_score"]]
-        print(len(block_df))
-        print(len(susie_df))
-        print(ld_matrix.shape)
-        print(susie_df.head())
-        print(len(set(matrix_manifest)))
+        # susie_df = susie_df[["dom_z_score"]]
 
-    return
+        # print(len(block_df))
+        # print(len(susie_df))
+        # print(ld_matrix.shape)
+        # print(len(set(matrix_manifest)))
+        from collections import Counter
+
+        counts = Counter(matrix_manifest)
+        duplicates = [item for item, count in counts.items() if count > 1]
+        dup_df = susie_df[susie_df["pos"].isin(duplicates)].copy()
+
+        total_sig = len(block_df[block_df["dominance_pval"] < (5e-8) / 1060])
+        dup_sig = len(dup_df[dup_df["dominance_pval"] < (5e-8) / 1060])
+
+        df_row = [
+            phen_code,
+            f"{chrom}:{start_bp}:{end_bp}",
+            total_sig,
+            dup_sig,
+            dup_sig / total_sig,
+        ]
+
+        # Add dup_rows to df_dup, ignoring the index to maintain a clean sequential index
+        if df_row:
+            trait_rows.append(df_row)
+
+        if not dup_df.empty:
+            SNPs.extend(dup_df["variant"].tolist())
+
+    return trait_rows, SNPs
 
 
 if __name__ == "__main__":
 
-    sumstat_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sumstats_QCed"
-    phen_dict_path = "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/phen_dict_renamed.xlsx"
-    loci_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sig_loci"
-    ld_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/ld_files"
-    out_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results"
+    if len(sys.argv) < 4:
+        print("Error: missing arguments")
+        sys.exit(1)
+
+    task_id = int(sys.argv[1])-1
+    sumstats_dir = sys.argv[2]
+    phen_dict_path = sys.argv[3]
+    loci_dir = sys.argv[4]
+    ld_dir = sys.argv[5]
+    out_dir = sys.argv[6]
+
+    print("all good")
+
+    # sumstats_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sumstats_QCed"
+    # phen_dict_path = "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/phen_dict.xlsx"
+    # loci_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sig_loci"
+    # ld_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/ld_files"
+    # sig_SNPs_path = "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/significant_SNPs/all_sig_SNPs.tsv.gz"
+    # out_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/mult_results"
 
     traits = pd.read_excel(
         phen_dict_path, usecols=["phenotype_code", "description", "n_non_missing"]
     )
-    traits = traits[traits["phenotype_code"] == "1747_2"]
 
-    for index, row in traits.iterrows():
+    print("all good 2")
+    traits = traits.sort_values(by="phenotype_code").reset_index(drop=True)
+    row = traits.iloc[task_id]
 
-        phen_code = row["phenotype_code"]
-        phen_name = row["description"]
-        sample_size = int(row["n_non_missing"])
+    col_names = ["Phenotype", "Locus", "Total_sig", "Multi-allelic_sig", "Ratio"]
+    df_dup = pd.DataFrame(columns=col_names)
+    mult_SNPs = set()
+    print("all good 3")
 
-        print(f"Processing: {phen_code}")
 
-        try:
-            results = get_data(phen_code, sumstat_dir, loci_dir)
+    phen_code = row["phenotype_code"]
+    phen_name = row["description"]
+    sample_size = int(row["n_non_missing"])
 
-            if results is None:
-                continue  # Skip to the next phenotype
+    print(f"Processing: {phen_code}")
 
-            sumstat_data, unique_blocks = results
+    try:
+        results = get_data(phen_code, sumstats_dir, loci_dir)
 
-        except FileNotFoundError:
-            # Skip to the next phenotype if the file/dir doesn't exist
-            print(f"No significant loci data for{phen_code} ")
-            continue
+        if results is None:
+            sys.exit(0)  # Skip to the next phenotype
 
-        run_SuSiE(
-            sumstat_data, unique_blocks, sample_size, phen_code, phen_name, ld_dir, out_dir
-        )
+        sumstat_data, unique_blocks = results
+
+    except FileNotFoundError:
+        # Skip to the next phenotype if the file/dir doesn't exist
+        print(f"No significant loci data for{phen_code} ")
+        sys.exit(0)
+
+    trait_rows, SNPs = run_SuSiE(
+        sumstat_data,
+        unique_blocks,
+        sample_size,
+        phen_code,
+        phen_name,
+        ld_dir,
+        out_dir,
+    )
+
+    if trait_rows:
+        trait_df = pd.DataFrame(trait_rows, columns=col_names)
+        df_dup = pd.concat([df_dup, trait_df], ignore_index=True)
+
+    if SNPs:
+        mult_SNPs.update(SNPs)
+
+    df_mult = pd.DataFrame(mult_SNPs, columns=["variant"])
+    df_mult["mult"] = 1
+    
+    df_dup.to_excel(f"{out_dir}/{phen_code}_trait.xlsx", index=False)
+    df_mult.to_excel(f"{out_dir}/{phen_code}_mult_pleio.xlsx", index=False)
