@@ -1,16 +1,10 @@
 import os
 import sys
 import glob
+import tempfile
+import subprocess
 import numpy as np
 import pandas as pd
-import rpy2.robjects as ro
-from rpy2.robjects import pandas2ri, numpy2ri
-from rpy2.robjects.packages import importr
-from rpy2.robjects.conversion import localconverter
-
-# Import the required R packages
-base = importr('base')
-susieR = importr('susieR')
 
 
 def get_ld_matrix(snp_list, ld_dir):
@@ -110,7 +104,12 @@ def get_ld_matrix(snp_list, ld_dir):
     # Dominance LD
     ld_matrix_2 = ld_matrix ** 2
 
-    return ld_matrix, matrix_manifest
+    # Make sure no NAs
+    if np.isnan(ld_matrix_2).any():
+        print("Warning: NaNs detected in LD matrix. Neutralizing to 0.")
+        ld_matrix_2 = np.nan_to_num(ld_matrix_2, nan=0.0)
+
+    return ld_matrix_2, matrix_manifest
 
 
 def get_data(phen_code, sumstat_dir, loci_dir):
@@ -170,17 +169,32 @@ def get_data(phen_code, sumstat_dir, loci_dir):
 
 
 def run_SuSiE(
-    sumstat_data,
-    unique_blocks,
+    sumstats_dir,
+    loci_dir,
     sample_size,
     phen_code,
-    phen_name,
     ld_dir,
+    r_script_path,
     output_dir,
     buffer_kb=50,
 ):
     """Executes SuSiE fine-mapping on independent loci."""
+
+    # ------------------- Load data --------------------- #
+    try:
+        results = get_data(phen_code, sumstats_dir, loci_dir)
+
+        if results is None:
+            sys.exit(1)
+
+        sumstat_data, unique_blocks = results
+
+    except FileNotFoundError:
+        print(f"No significant loci data for {phen_code} ")
+        sys.exit(1)
+    # ------------------- Load data --------------------- #
     
+
     all_susie_results = []
 
     # Create the output directory
@@ -191,6 +205,8 @@ def run_SuSiE(
         chrom = row.chr
         start_bp = row.start_bp
         end_bp = row.end_bp
+
+        locus_string = f"chr{chrom}:{start_bp}-{end_bp}"
 
         # Define the LD  window (add the buffer)
         ld_start = start_bp - (buffer_kb * 1000)
@@ -211,128 +227,145 @@ def run_SuSiE(
         # List of variant for which LD matrix will be obtained
         var_list = list(zip(block_df["chr"].astype(int), block_df["pos"].astype(int)))
 
+
         # Get the LD matrix
         print("Obtaining LD matrix...")
         try:
             ld_matrix, matrix_manifest = get_ld_matrix(var_list, ld_dir)
+            if ld_matrix.size == 0 or matrix_manifest is None:
+                continue
         except ValueError as e:
             print(f"Skipping locus {chrom}:{start_bp}-{end_bp} - {e}")
             continue
 
-        if ld_matrix.size == 0 or matrix_manifest is None:
-            continue
 
         # Remove the variants where  no LD information is available
+        # Define the exact columns you want to keep
+        cols_to_keep = ["variant", "chr", "pos", "minor_AF", "rsid", 
+                        "dominance_beta", "dominance_se", "dom_z_score"]
+
         susie_df = (
-            block_df[block_df["pos"].isin(matrix_manifest)]
+            block_df.loc[block_df["pos"].isin(matrix_manifest), cols_to_keep]
             .copy()
             .sort_values(by="pos")
             .reset_index(drop=True)
         )
 
-        # --- THE DOUBLE CHECK STEP FOR DATA ALIGNMENT ---
+
+        # -------------------  Double Check Data Alignment ---------------------- #
         if (
             len(susie_df) != ld_matrix.shape[0]
             or susie_df["pos"].tolist() != matrix_manifest
         ):
-            print(f"Alignment failed for locus {chrom}:{start_bp}-{end_bp}. Skipping.")
+            print(f"Alignment failed for locus {locus_string}. Skipping.")
             continue
-        # -----------------------------
         print(
             "The LD matrix is successfully obtained and aligned with summary statistics"
         )
+        # -------------------  Double Check Data Alignment ---------------------- #
 
-        # Run SuSie     
-        z_scores = susie_df["dom_z_score"].values
 
+        #-------------------------- Run SuSie in R -------------------------------#
         print(
-            f"Running SuSiE for locus {chrom}:{start_bp}-{end_bp} with {len(z_scores)} SNPs..."
+            f"Running SuSiE for locus {chrom}:{start_bp}-{end_bp} with {len(susie_df)} SNPs..."
         )
 
-        if np.isnan(ld_matrix).any():
-            print("Warning: NaNs detected in LD matrix. Neutralizing to 0.")
-            ld_matrix = np.nan_to_num(ld_matrix, nan=0.0)
-        
-        ld_matrix_2 = ld_matrix ** 2
-        np.savetxt(f"{output_dir}/{chrom}:{start_bp}:{end_bp}_matrix.csv", ld_matrix_2, delimiter=",")
-        susie_df.to_csv(f"{output_dir}/{chrom}:{start_bp}:{end_bp}_data.csv", sep='\t', index=False)
-        
-        # Execute SuSiE
-        try:
+        # A temporary directory
+        with tempfile.TemporaryDirectory() as tmpdir:
+            susie_df_file = os.path.join(tmpdir, "susie_df.tsv")
+            ld_file = os.path.join(tmpdir, "ld_matrix.csv")
+            out_file = os.path.join(tmpdir, "susieR_results.tsv")
+
+            # Write the data to disk for R to read
+            susie_df.to_csv(susie_df_file, sep='\t', index=False)
+            np.savetxt(ld_file, ld_matrix, delimiter=",")
+
+            # Call the R script via the command line
+            command = [
+                "Rscript", 
+                r_script_path, 
+                susie_df_file, 
+                ld_file, 
+                str(sample_size), 
+                out_file
+            ]
+
+            try:
+                # Run the command and wait for it to finish
+                subprocess.run(command, check=True, capture_output=True, text=True)
+                
+                # Read the results back from R
+                r_results = pd.read_csv(out_file, sep='\t')
+                
+                # Merge all 7 fine-mapping columns back into your main dataframe
+                new_columns = ["PIP", "CS", "CS_prob", "low_purity", "lead_r2", "post_mean", "post_sd", "lambda"]
+                
+                for col in new_columns:
+                    susie_df[col] = r_results[col].values
+
+                susie_df.insert(0, "phen_id", phen_code)
+                susie_df.insert(1, "locus_id", locus_string)
+                
+                # Append to master list
+                all_susie_results.append(susie_df)
+
+            except subprocess.CalledProcessError as e:
+                print(f"SuSiE R script failed for this locus.")
+                print(f"R Error Output:\n{e.stderr}")
+                continue
+
+            #-------------------------- Run SuSie in R -------------------------------#
+
+
+        # Save the final locus-specific dataframe and locus matrix
+        os.makedirs(f"{output_dir}/susie_raw_files", exist_ok=True)
+        np.savetxt(f"{output_dir}/susie_raw_files/{phen_code}_{chrom}:{start_bp}:{end_bp}_matrix.csv", ld_matrix, delimiter=",")
+        susie_df.to_csv(f"{output_dir}/susie_raw_files/{phen_code}_{chrom}:{start_bp}:{end_bp}_data.csv", sep='\t', index=False)
+
+    print("Merging all loci into master dataframe...")
+    susie_res_df = pd.concat(all_susie_results, ignore_index=True)
     
-            with localconverter(ro.default_converter + pandas2ri.converter + numpy2ri.converter):
-                
-                # Run the model
-                susie_fit = susieR.susie_rss(
-                    z=z_scores, 
-                    R=ld_matrix_2, 
-                    n=sample_size, 
-                    L=10,
-                    estimate_residual_variance=False
-                )
-                
-                # Extract PIPs (automatically converts to a safe Python array)
-                pips = np.array(susie_fit.rx2("pip"))
-                susie_df["PIP"] = pips
-                
-                # Extract Credible Sets
-                susie_df["CS"] = 0 
-                cs_res = susieR.susie_get_cs(susie_fit)
-                
-                if cs_res != ro.rinterface.NULL and "cs" in cs_res.names:
-                    cs_list = cs_res.rx2("cs")
-                    for i, cs_name in enumerate(cs_list.names):
-                        r_indices = np.array(cs_list[i])
-                        py_indices = [int(idx) - 1 for idx in r_indices] # R to Python index fix
-                        cs_num = int(cs_name.replace('L', ''))
-                        susie_df.loc[py_indices, "CS"] = cs_num
+    final_out = os.path.join(output_dir, f"{phen_code}_susie_res.tsv")
+    susie_res_df.to_csv(final_out, sep='\t', index=False)
+    print(f"Success! Saved results to {final_out}")
 
-            # Append to master list
-            all_susie_results.append(susie_df)
-            
-            # Save locus-specific results
-            out_file = os.path.join(output_dir, f"{phen_code}_chr{chrom}_{start_bp}_{end_bp}_susie.tsv")
-            susie_df.to_csv(out_file, sep='\t', index=False)
-
-        except Exception as e:
-            print(f"SuSiE R execution failed for this locus: {e}")
-            continue
-            
+    
     return all_susie_results
 
 
 if __name__ == "__main__":
 
-    # if len(sys.argv) < 4:
-    #     print("Error: missing arguments")
-    #     sys.exit(1)
+    if len(sys.argv) < 4:
+        print("Error: missing arguments")
+        sys.exit(1)
 
-    # task_id = int(sys.argv[1])-1
-    # sumstats_dir = sys.argv[2]
-    # phen_dict_path = sys.argv[3]
-    # loci_dir = sys.argv[4]
-    # ld_dir = sys.argv[5]
-    # out_dir = sys.argv[6]
+    task_id = int(sys.argv[1])-1
+    sumstats_dir = sys.argv[2]
+    phen_dict_path = sys.argv[3]
+    loci_dir = sys.argv[4]
+    ld_dir = sys.argv[5]
+    r_script_path = sys.argv[6]
+    out_dir = sys.argv[7]
 
-    sumstats_dir = (
-        "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sumstats_QCed"
-    )
-    phen_dict_path = (
-        "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/phen_dict.xlsx"
-    )
-    loci_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sig_loci"
-    ld_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/ld_files"
-    sig_SNPs_path = "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/significant_SNPs/all_sig_SNPs.tsv.gz"
-    out_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results"
+    # sumstats_dir = (
+    #     "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sumstats_QCed"
+    # )
+    # phen_dict_path = (
+    #     "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/phen_dict.xlsx"
+    # )
+    # loci_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sig_loci"
+    # ld_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/ld_files"
+    # r_script_path = "/Users/sezgi/Documents/dominance_pleiotropy/scripts/loci_level/run_SuSie_core.R"
+    # out_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results"
 
-    traits = pd.read_excel(
-        phen_dict_path, usecols=["phenotype_code", "description", "n_non_missing"]
-    )
+    traits = pd.read_excel(phen_dict_path, 
+                           usecols=["phenotype_code", "description", "n_non_missing"]
+                           )
 
     traits = traits.sort_values(by="phenotype_code").reset_index(drop=True)
-    # row = traits.iloc[task_id]
-    traits= traits[traits["phenotype_code"] == "M72"]
-    row = traits.iloc[0]
+    row = traits.iloc[task_id]
+    # traits= traits[traits["phenotype_code"] == "1747_2"]
+    # row = traits.iloc[0]
 
     col_names = ["Phenotype", "Locus", "Total_sig", "Multi-allelic_sig", "Ratio"]
     df_dup = pd.DataFrame(columns=col_names)
@@ -343,20 +376,7 @@ if __name__ == "__main__":
     phen_name = row["description"]
     sample_size = int(row["n_non_missing"])
 
-    print(f"Processing: {phen_code}")
-
-    try:
-        results = get_data(phen_code, sumstats_dir, loci_dir)
-
-        if results is None:
-            sys.exit(0)  # Skip to the next phenotype
-
-        sumstat_data, unique_blocks = results
-
-    except FileNotFoundError:
-        # Skip to the next phenotype if the file/dir doesn't exist
-        print(f"No significant loci data for {phen_code} ")
-        sys.exit(0)
+    print(f"Processing: {phen_name} ({phen_code})")
     
-    run_SuSiE(sumstat_data, unique_blocks, sample_size, phen_code, phen_name, ld_dir,
+    run_SuSiE(sumstats_dir, loci_dir, sample_size, phen_code, ld_dir, r_script_path,
               out_dir)

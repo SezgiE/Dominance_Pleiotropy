@@ -17,16 +17,13 @@ diag(mtrx_blend) <- 1.000
 
 fitted_rss3 <- susie_rss(z = z_scr, 
                          R = mtrx_blend, 
-                         n = 361194,                          # Put the real sample size back
-                         L = 10, 
-                         estimate_residual_variance = FALSE,  # Freeze the noise floor
-                         estimate_prior_variance = FALSE,     # <-- THE ULTIMATE OVERRIDE
-                         prior_variance = 0.1,                # Lock the effect size expectation to 10%
-                         check_z = FALSE,
+                         n = 361194,                          
+                         L = 10,
+                         estimate_prior_variance = FALSE,
                          max_iter = 500
                          )
 
-
+fitted_rss3$sets
 
 
 # Get indices of the top 5 values in row 155, sorted descending

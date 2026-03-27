@@ -111,10 +111,9 @@ def plot_regional_association(plot_df, genes_df, phen_code, phen_name, output_di
 
     plot_df = plot_df.sort_values("dom_log10_pval", ascending=False).reset_index(drop=True)
     
-    lowest_valid_p = plot_df.loc[plot_df["dominance_pval"] != 0, "dom_log10_pval"].max()
     plot_df["-log10_plotting"] = np.where(
-        plot_df["dominance_pval"] == 0, 
-        lowest_valid_p + (plot_df["dom_log10_pval"] / 100),
+        plot_df["dom_log10_pval"] > 300, 
+        300 + (plot_df["dom_log10_pval"] / 100),
         plot_df["dom_log10_pval"]
         )
 
@@ -250,6 +249,20 @@ def plot_regional_association(plot_df, genes_df, phen_code, phen_name, output_di
                 s=25,
                 zorder=3
             )
+        
+        if window_df['-log10_plotting'].max() > 300:
+            
+            # Find the exact row with the highest value
+            highest_snp = window_df.loc[window_df['dom_log10_pval'].idxmax()]
+            
+            ax_main.scatter(
+                            highest_snp['pos'] / 1e6,
+                            highest_snp['-log10_plotting'] + 20,
+                            marker='*',
+                            color='#780505',
+                            s=15,           
+                            zorder=5
+                        )
 
         # 8. Formatting the Axes
         ax_main.set_ylabel(r'$-\log_{10}(P)$', fontweight='bold')
@@ -270,8 +283,17 @@ def plot_regional_association(plot_df, genes_df, phen_code, phen_name, output_di
             mpatches.Patch(color='none', label=' '),mpatches.Patch(color='none', label=' '),
             mpatches.Patch(color='none', label=' '),mpatches.Patch(color='none', label=' '),
             plt.Line2D([0], [0], color='black', linestyle='--', linewidth=0.8, 
-                       label=r'$P \approx 4.7 \times 10^{-11}$')
+                       label=r'$P \approx 4.7 \times 10^{-11}$'),
+            mpatches.Patch(color='none', label=' ')
         ]
+
+        max_pval = window_df['dom_log10_pval'].max()
+        if max_pval > 300:
+            ld_legend.append(
+                plt.Line2D([0], [0], marker='*', color='w', markerfacecolor='#780505', 
+                           markeredgecolor='#780505', markersize=5, 
+                           label=f'$-\\log_{{10}}(P) = {max_pval:.0f}$')
+            )
 
 
         if indep_row.empty:
@@ -288,7 +310,7 @@ def plot_regional_association(plot_df, genes_df, phen_code, phen_name, output_di
                 ]
             custom_cmap = mcolors.LinearSegmentedColormap.from_list("indep_purple", cmap_colors)
 
-            cax = ax_main.inset_axes([1.089, 0.39, 0.0475, 0.029]) 
+            cax = ax_main.inset_axes([1.077, 0.41, 0.0475, 0.029]) 
             
             norm = mcolors.Normalize(vmin=0.01, vmax=0.30) 
             cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=custom_cmap),
@@ -297,7 +319,7 @@ def plot_regional_association(plot_df, genes_df, phen_code, phen_name, output_di
             cb.outline.set_linewidth(0)
             cax.text(1.3, 0.5, r'$0.1 \leq r^4 < 0.6$', size=6, 
                     transform=cax.transAxes, ha='left', va='center')
-            cax.text(-0.42, 1.8, 'LD to Lead SNP', fontsize=7, 
+            cax.text(-0.18, 1.8, 'LD to Lead SNP', fontsize=7, 
                     transform=cax.transAxes, ha='left', va='bottom')
 
 
@@ -371,7 +393,7 @@ if __name__ == "__main__":
     out_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/loci_plots"
 
     traits = pd.read_excel(phen_dict_path, usecols=["phenotype_code", "description"])
-    #traits = traits[traits["phenotype_code"] == "2217_irnt"]
+    #traits = traits[traits["phenotype_code"] == "1747_2"]
 
 
     for index, row in traits.iterrows():
