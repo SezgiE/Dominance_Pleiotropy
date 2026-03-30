@@ -1,0 +1,32 @@
+# --- Never upload these ---
+*.bed
+*.bim
+*.fam
+*.vcf
+*.vcf.gz
+*.bgen
+*.gen
+*.ped
+*.map
+*.csv
+*.ldscore
+*.M
+*.M_5_50
+*.h2
+*.h2.gz
+*.chisq.gz
+*.xlsx
+*.snplist
+*.txt
+*.log
+*.gz
+*.bgz
+*.tsv
+
+# --- Mac System Files ---
+.DS_Store
+
+# --- Python/R Cache ---
+__pycache__/
+*.Rhistory
+*.RData

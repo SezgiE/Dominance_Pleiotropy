@@ -37,7 +37,8 @@ def get_SNPs_in_LD(chr_sumstat_df, ld_dir, snp, r4_threshold, p_threshold=0.05):
         return pd.DataFrame(), set(), error_code
     
     master_pos_to_r = {}
-    
+    master_dup_positions = set()
+
     for target_npz, target_gz in matching_chunks:
         if not os.path.exists(target_gz):
             continue
@@ -48,11 +49,17 @@ def get_SNPs_in_LD(chr_sumstat_df, ld_dir, snp, r4_threshold, p_threshold=0.05):
         # Duplicates 
         is_duplicate = manifest.duplicated(subset=[pos_col], keep=False)
         dup_positions = manifest.loc[is_duplicate, pos_col].unique()
+        master_dup_positions.update(dup_positions)
 
         snp_matches = manifest.index[manifest[pos_col] == pos].tolist()
         if not snp_matches:
             continue
-
+        
+        if pos in dup_positions:
+            print(f"Warning: Position {pos} in chromosome {chrom} is multi-allelic in the manifest. Skipping this SNP for LD clumping.")
+            error_code = "Error: SNP is multi-allelic in the manifest."
+            return pd.DataFrame(), set(), error_code
+       
         target_idx = snp_matches[0]
 
         with np.load(target_npz) as ld_data:
@@ -89,6 +96,9 @@ def get_SNPs_in_LD(chr_sumstat_df, ld_dir, snp, r4_threshold, p_threshold=0.05):
         (chr_sumstat_df['pos'].isin(master_pos_to_r.keys())) & 
         (chr_sumstat_df['dominance_pval'] < p_threshold)
     ].copy()
+
+    # Remove multi-allelic SNPs if they are present in the result set
+    result_df = result_df[~result_df['pos'].isin(master_dup_positions)]
 
     ld_snps = [v for v in result_df['variant'].tolist() if v != snp]
 
@@ -362,8 +372,8 @@ if __name__ == "__main__":
     # print(f"Process starts for phenotype {phen_list[task_id]}")
     # main(sumstat_path, ld_dir, phen_list[task_id], out_dir)
 
-    sumstat_path="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sumstats_QCed/1747_2_sig_SNPs.tsv.bgz"
-    phen_code="1747_2"
+    sumstat_path="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sumstats_QCed/M72_sig_SNPs.tsv.bgz"
+    phen_code="M72"
     ld_dir= "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/ld_files"
     out_dir= "/Users/sezgi/Documents/dominance_pleiotropy/loci_level"
     main(sumstat_path, ld_dir, phen_code, out_dir)
