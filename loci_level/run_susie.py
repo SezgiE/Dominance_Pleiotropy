@@ -206,7 +206,7 @@ def run_SuSiE(
         start_bp = row.start_bp
         end_bp = row.end_bp
 
-        locus_string = f"chr{chrom}:{start_bp}-{end_bp}"
+        locus_string = f"{chrom}:{start_bp}:{end_bp}"
 
         # Define the LD  window (add the buffer)
         ld_start = start_bp - (buffer_kb * 1000)

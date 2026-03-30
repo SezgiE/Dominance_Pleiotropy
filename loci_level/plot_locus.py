@@ -9,7 +9,7 @@ import matplotlib.patches as mpatches
 from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
 
 
-def get_data(phen_code, sumstat_dir, loci_dir):
+def get_data(phen_code, sumstat_dir, loci_dir, susie_dir):
     """Gets and merges locus data."""
 
     raw_df = pd.read_csv(f"{sumstat_dir}/{phen_code}_sig_SNPs.tsv.bgz", sep='\t', compression='gzip')
@@ -36,6 +36,15 @@ def get_data(phen_code, sumstat_dir, loci_dir):
         print("No loci to plot.")
         return None
     
+    susie_df = pd.read_csv(f"{susie_dir}/{phen_code}_susie_res.tsv", sep='\t', 
+                        usecols=["variant", "locus_id", "pos", "rsid", "dom_z_score", "PIP", "CS", "CS_prob", "low_purity", 
+                                 "lead_r2", "post_mean", "post_sd", "lambda"])
+    
+    if susie_df.empty:
+        print("No SuSiE results to plot.")
+        return None
+    
+
     plot_df = masked_df.merge(loci_df, on="variant", how="left")
     
     # Remove duplicates
@@ -52,7 +61,7 @@ def get_data(phen_code, sumstat_dir, loci_dir):
     plot_df = plot_df[~rows_to_drop]
     plot_df = plot_df.drop(columns=['indep_pval'])
 
-    return plot_df
+    return plot_df, susie_df
 
 
 def get_gene_annotations(gene_bed_path):
@@ -94,7 +103,7 @@ def lighten_color(hex_color, amount=0.5):
         return hex_color
 
 
-def plot_regional_association(plot_df, genes_df, phen_code, phen_name, output_dir, buffer_kb=50):
+def plot_regional_association(plot_df, genes_df, susie_df, phen_code, phen_name, output_dir, buffer_kb=50):
     """Generates LocusZoom-style plots for each unique independent locus."""
     
     set_style()
@@ -121,17 +130,17 @@ def plot_regional_association(plot_df, genes_df, phen_code, phen_name, output_di
     nrows = int(np.ceil(n_blocks / ncols))
 
     # Scale the figure size dynamically. 
-    # Width = 3.5 per col (+ padding for legends). Height = 4.5 per row.
-    fig = plt.figure(figsize=(6.5 * ncols, 4.5 * nrows))
+    fig = plt.figure(figsize=(6.5 * ncols, 6.5 * nrows))
     
     # Create the master grid. wspace=0.7 guarantees your custom right-side legends won't overlap the next column!
     master_gs = GridSpec(nrows, ncols, figure=fig, wspace=0.6, hspace=0.4)
 
-    # 3. Loop through each master locus and generate a subplot
+    # Loop through each master locus and generate a subplot
     for idx, block in enumerate(unique_blocks):
         print(f"Plotting locus: {block}")
         
         locus_data = plot_df[plot_df['ld_id'] == block].copy()
+        pip_df = susie_df[susie_df["locus_id"] == block].copy()
         
         chrom = locus_data['chr'].iloc[0]
         ld_start = locus_data['ld_start'].min()
@@ -162,11 +171,12 @@ def plot_regional_association(plot_df, genes_df, phen_code, phen_name, output_di
         col_idx = idx % ncols
 
         # Create your 3:1 nested GridSpec exactly inside this specific grid cell
-        gs_inner = GridSpecFromSubplotSpec(2, 1, subplot_spec=master_gs[row_idx, col_idx], 
-                                           height_ratios=[3, 1], hspace=0.05)
+        gs_inner = GridSpecFromSubplotSpec(3, 1, subplot_spec=master_gs[row_idx, col_idx], 
+                                    height_ratios=[3, 1.5, 0.75], hspace=0.2)
         
         ax_main = fig.add_subplot(gs_inner[0])
-        ax_gene = fig.add_subplot(gs_inner[1], sharex=ax_main)
+        ax_pip  = fig.add_subplot(gs_inner[1], sharex=ax_main)
+        ax_gene = fig.add_subplot(gs_inner[2], sharex=ax_main)
 
 
         # Define standard LocusZoom Color Mapping
@@ -334,6 +344,77 @@ def plot_regional_association(plot_df, genes_df, phen_code, phen_name, output_di
         y_levels = [0, 1, 2, 3]
         current_level = 0
 
+        
+        # ---------------- PANEL 2: PIPs and Credible Sets ------------------ #
+        pip_df['abs_z'] = pip_df['dom_z_score'].abs()
+        pip_df = pip_df.sort_values('abs_z', ascending=False)
+
+        # Plot Background SNPs (Not in a CS)
+        bg_cs_mask = (pip_df['CS'] == 0) | (pip_df['CS'].isna())
+        ax_pip.scatter(
+            pip_df.loc[bg_cs_mask, 'pos'] / 1e6,  # Still using the jittered X
+            pip_df.loc[bg_cs_mask, 'PIP'],
+            c='#357EBD', edgecolors='white', linewidths=0.1, s=20, alpha=0.9, zorder=2
+        )
+
+        # Assign high-contrast colors to each Credible Set
+        cs_colors = [
+            '#E41A1C',
+            '#377EB8',
+            '#4DAF4A',
+            '#984EA3',
+            '#FF7F00',
+            '#A65628',
+            '#F781BF',
+            '#17BECF', 
+            '#800000',
+            '#B8860B'
+        ]
+        pip_df =pip_df[pip_df["low_purity"] == False].copy()
+        unique_cs = sorted([cs for cs in pip_df['CS'].unique() if pd.notna(cs) and cs > 0])
+        
+        pip_legend = []
+
+        for i, cs in enumerate(unique_cs):
+            cs_mask = pip_df['CS'] == cs
+            color = cs_colors[i % len(cs_colors)]
+            
+            # Plot the CS SNPs
+            ax_pip.scatter(
+                pip_df.loc[cs_mask, 'pos'] / 1e6, 
+                pip_df.loc[cs_mask, 'PIP'],
+                c=color, edgecolors='black', linewidths=1, s=25, alpha=0.9, zorder=3,
+                label=f'CS {int(cs)}'
+            )
+
+            # --- legend ---
+            max_pip = pip_df.loc[cs_mask, 'PIP'].max()
+            top_snps = pip_df.loc[cs_mask & (pip_df['PIP'] == max_pip), 'rsid'].tolist()
+            rsid_str = ", ".join(top_snps)
+            pip_legend.append(
+                plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=color, 
+                           markeredgecolor='black', markersize=5, 
+                           label=f'CS {int(cs)}: {rsid_str}')
+            )
+
+        if pip_legend:
+            ax_pip.legend(
+                handles=pip_legend,
+                loc='upper left',
+                bbox_to_anchor=(1.05, 1), 
+                frameon=False,
+                title='Credible Sets (Top PIP)',
+                fontsize=5,
+                title_fontsize=7,
+                labelspacing=0.5,
+                handletextpad=0.1
+            )
+            
+        
+        ax_pip.set_ylabel('PIP')
+
+         # ----------------------------------------------------------- #
+
 
         # Define minimum size threshold in base pairs
         min_gene_size_bp = 10000 
@@ -390,6 +471,7 @@ if __name__ == "__main__":
     phen_dict_path = "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/phen_dict_renamed.xlsx"
     gene_bed_path = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/ld_info/human_genes_hg19.bed"
     loci_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sig_loci"
+    susie_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results"
     out_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/loci_plots"
 
     traits = pd.read_excel(phen_dict_path, usecols=["phenotype_code", "description"])
@@ -402,7 +484,7 @@ if __name__ == "__main__":
         phen_name = row['description']
 
         try:
-            plot_df = get_data(phen_code, sumstat_dir, loci_dir)
+            plot_df, susie_df = get_data(phen_code, sumstat_dir, loci_dir, susie_dir)
 
             if plot_df is None or plot_df.empty:
                 print(f"No data returned for {phen_code}")
@@ -417,4 +499,4 @@ if __name__ == "__main__":
 
         genes_df = get_gene_annotations(gene_bed_path)
         
-        plot_regional_association(plot_df, genes_df, phen_code, phen_name, out_dir)
+        plot_regional_association(plot_df, genes_df, susie_df, phen_code, phen_name, out_dir)

@@ -45,6 +45,10 @@ def get_SNPs_in_LD(chr_sumstat_df, ld_dir, snp, r4_threshold, p_threshold=0.05):
         manifest = pd.read_csv(target_gz, compression="gzip", sep='\t')
         pos_col = "position"
 
+        # Duplicates 
+        is_duplicate = manifest.duplicated(subset=[pos_col], keep=False)
+        dup_positions = manifest.loc[is_duplicate, pos_col].unique()
+
         snp_matches = manifest.index[manifest[pos_col] == pos].tolist()
         if not snp_matches:
             continue
