@@ -24,7 +24,7 @@
 *.tsv
 
 # --- Mac System Files ---
-.DS_Store
+*.DS_Store
 
 # --- Python/R Cache ---
 __pycache__/
