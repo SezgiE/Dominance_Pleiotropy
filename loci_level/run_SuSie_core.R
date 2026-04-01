@@ -47,7 +47,7 @@ summarize.susie.cs <- function(object, orig_vars, R, low_purity_threshold = 0.5)
 # --- THE EXECUTION FLOW ---
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) != 4) {
-  stop("Usage: Rscript susie_core_optimized.R <stats_file.tsv> <ld_matrix.csv> <n_samples> <out_file.tsv>")
+  stop("Usage: Rscript run_susie_cor.R <stats_file.tsv> <ld_matrix.csv> <n_samples> <out_file.tsv>")
 }
 
 stats_file <- args[1]
