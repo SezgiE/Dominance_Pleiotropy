@@ -6,6 +6,7 @@ suppressPackageStartupMessages(library(stringr))
 suppressPackageStartupMessages(library(susieR))
 suppressPackageStartupMessages(library(coloc))
 rm(list =ls(all.names = TRUE))
+options(warn = -1)
 
 # Estimate phenotypic variance
 compute_yty <- function(beta, se, p, R, n, k) {
@@ -74,87 +75,139 @@ run_susie_pipeline <- function(data_file, matrix_file, n, k_covariates, trait_ty
 }
 
 
-# --- THE EXECUTION FLOW ---
+# Format and save significant colocalization results
+format_coloc_results <- function(susie_coloc_res, out_file, h4_threshold = 0.50) {
+  
+  sig_rows <- which(susie_coloc_res$summary$PP.H4.abf >= h4_threshold)
+  
+  if (length(sig_rows) == 0) {
+    cat(sprintf("No pleiotropic signals met the >= %.2f threshold at this locus.\n", h4_threshold))
+    return(FALSE) # Signal to the main script that nothing was found
+  } 
+  
+  # Subset and process the dataframe
+  res_df <- as.data.frame(susie_coloc_res$results)
+  cols_to_keep <- c("snp", paste0("SNP.PP.H4.row", sig_rows))
+  filtered_res_df <- res_df[, cols_to_keep, drop = FALSE]
+  
+  cs1_indices <- susie_coloc_res$summary$idx1[sig_rows]
+  cs2_indices <- susie_coloc_res$summary$idx2[sig_rows]
+  
+  ordered_cols <- c("snp")
+  
+  for (i in seq_along(sig_rows)) {
+    base_name <- paste0("cs", cs1_indices[i], "_cs", cs2_indices[i])
+    pip_col <- paste0(base_name, "_PIP")
+    h4_col <- paste0(base_name, "_H4")
+    
+    old_col <- paste0("SNP.PP.H4.row", sig_rows[i])
+    names(filtered_res_df)[names(filtered_res_df) == old_col] <- pip_col
+    filtered_res_df[[h4_col]] <- susie_coloc_res$summary$PP.H4.abf[sig_rows[i]]
+    
+    ordered_cols <- c(ordered_cols, pip_col, h4_col)
+  }
+  
+  filtered_res_df <- filtered_res_df[, ordered_cols, drop = FALSE]
+  
+  # Write the file
+  fwrite(filtered_res_df, out_file, sep = "\t", quote = FALSE)
+  return(TRUE) # Signal success
+}
+
+
+# ---------------------- THE EXECUTION FLOW -------------------------#
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) != 4) {
+if (length(args) != 11) {
   stop("Usage: Rscript run_coloc_core.R <stats_file1.tsv> <ld_matrix1.csv> <n_samples1> <k_samples1>
        <stats_file2.tsv> <ld_matrix2.csv> <n_samples2> <k_samples2> <out_file.tsv>")
 }
 
+# ---------------------- Read Data -------------------------#
 # # Trait 1
 data_file1 <- args[1]
 ld_file1 <- args[2]
 n_samples1 <- as.numeric(args[3])
 k1_covariates <- as.numeric(args[4])
+type1 <- args[5]
 
 # Trait 2
-data_file2 <- args[5]
-ld_file2 <- args[6]
-n_samples2 <- as.numeric(args[7])
-k2_covariates <- as.numeric(args[8])
+data_file2 <- args[6]
+ld_file2 <- args[7]
+n_samples2 <- as.numeric(args[8])
+k2_covariates <- as.numeric(args[9])
+type2 <- args[10]
 
 # tmp output
-out_file <- args[9]
-
-# # Run Trait 1
-susie_trait1 <- run_susie_pipeline(
-  matrix_file = ld_file1,
-  data_file = data_file1,
-  n = n_samples1,
-  k_covariates = k1_covariates
-)
-
-# # Run Trait 2
-susie_trait2 <- run_susie_pipeline(
-  matrix_file = ld_file2,
-  data_file = data_file2,
-  n = n_samples2,
-  k_covariates = k2_covariates
-)
+out_file <- args[11]
 
 
-# susie_trait1 <- run_susie_pipeline(
-#   data_file = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/1747_1_16:89395438:90122562_data.csv",
-#   matrix_file = '/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/1747_1_16:89395438:90122562_matrix.csv',
-#   n = 360000,
-#   k_covariates = 13,
-#   trait_type ="quant"
-# )
-
-# # Run Trait 2
-# susie_trait2 <- run_susie_pipeline(
-#   data_file = '/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/1747_1_16:89395438:90122562_data.csv',
-#   matrix_file = '/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/1747_1_16:89395438:90122562_matrix.csv',
-#   n = 360000,
-#   k_covariates = 13,
-#   trait_type ="quant"
-# )
+# ---------------------- Run Trait 1 -------------------------#
+susie_trait1 <- tryCatch({
+  run_susie_pipeline(
+    data_file = data_file1,
+    matrix_file = ld_file1,
+    n = n_samples1,
+    k_covariates = k1_covariates,
+    trait_type = type1
+  )
+}, error = function(e) {
+  cat("\n[SUSIE ERROR] Trait 1 fine-mapping failed.\n", file=stderr())
+  cat("R Error:", conditionMessage(e), "\n", file=stderr())
+  return(NULL)
+})
 
 
-susie_coloc_res <- coloc.susie(susie_trait1, susie_trait2)
+# ---------------------- Run Trait 2 -------------------------#
+susie_trait2 <- tryCatch({
+  run_susie_pipeline(
+    matrix_file = ld_file2,
+    data_file = data_file2,
+    n = n_samples2,
+    k_covariates = k2_covariates,
+    trait_type = type2
+  )
+}, error = function(e) {
+  cat("\n[SUSIE ERROR] Trait 2 fine-mapping failed.\n", file=stderr())
+  cat("R Error:", conditionMessage(e), "\n", file=stderr())
+  return(NULL)
+})
 
-# Rows in the summary table have PP.H4 >= 0.80
-sig_rows <- which(susie_coloc_res$summary$PP.H4.abf >= 0.80)
 
-if (length(sig_rows) == 0) {
-  
-  cat("No pleiotropic signals met the >= 0.80 threshold at this locus.\n")
-  
-} else {
-  
-  res_df <- as.data.frame(susie_coloc_res$results)
-  cols_to_keep <- c("snp", paste0("SNP.PP.H4.row", sig_rows))
-  filtered_res_df <- res_df[, cols_to_keep, drop = FALSE]
-  cs1_indices <- susie_coloc_res$summary$idx1[sig_rows]
-  cs2_indices <- susie_coloc_res$summary$idx2[sig_rows]
-  new_col_names <- paste0("cs", cs1_indices, "_cs", cs2_indices)
-  colnames(filtered_res_df) <- c("snp", new_col_names)
-  
-  head(filtered_res_df)
-  
-  # Write the output
-  #fwrite(filtered_res_df, out_file, sep = "\t", quote = FALSE)
+if (is.null(susie_trait1) || is.null(susie_trait2)) {
+  quit(save = "no", status = 1)
 }
 
+
+# ----------------------- Run coloc --------------------------#
+susie_coloc_res <- tryCatch({
+  
+  coloc.susie(susie_trait1, susie_trait2)
+  
+}, error = function(e) {
+  
+  # Print the error to the console for your logs, but do NOT halt execution
+  cat("\n[COLOC ERROR] Coloc failed for this pair (likely zero overlapping SNPs).\n", file=stderr())
+  cat("R Error:", conditionMessage(e), "\n", file=stderr())
+  
+  # Return NULL to signal the failure to the rest of the script
+  return(NULL)
+  
+})
+
+
+if (is.null(susie_coloc_res)) {
+  cat("Skipping...\n")
+  quit(save = "no", status = 1)
+}
+
+
+# ---------------------- Save Results -------------------------#
+found_signals <- format_coloc_results(susie_coloc_res, out_file, h4_threshold = 0.50)
+
+# If no signals met the threshold, exit cleanly with status 0
+if (!found_signals) {
+  cat("No pleiotropic signals met the threshold value at this locus. Skipping...\n")
+  quit(save = "no", status = 0)
+}
 
 

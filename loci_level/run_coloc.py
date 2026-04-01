@@ -333,12 +333,9 @@ def run_coloc1(
     return all_susie_results
 
 
-def run_coloc(trait1, locus1, trait2, locus2, r_script_path, trait_1_df, ld1, n1, k1, trait_2_df, ld2, n2, k2):
+def run_coloc(r_script_path, trait_1_df, ld1, n1, k1, t1_type, trait_2_df, ld2, n2, k2, t2_type):
 
     #-------------------------- Run Coloc in R -------------------------------#
-    print(
-        f"Running Coloc between:\ntrait 1:{trait1}\nlocus:{locus1}:{start_bp}-{end_bp} with {len(susie_df)} SNPs..."
-    )
 
     # A temporary directory
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -367,10 +364,12 @@ def run_coloc(trait1, locus1, trait2, locus2, r_script_path, trait_1_df, ld1, n1
             ld1_file,
             str(n1),
             str(k1),
+            t1_type,
             df2_file,
             ld2_file,
             str(n2),
             str(k2),
+            t2_type,
             out_file    
         ]
 
@@ -381,66 +380,50 @@ def run_coloc(trait1, locus1, trait2, locus2, r_script_path, trait_1_df, ld1, n1
             try:
                 coloc_results = pd.read_csv(out_file, sep='\t')
 
+                return coloc_results
+
             except FileNotFoundError:
-                # The R script found no hits and didn't create the file
-                print(f"No significant loci data for {phen_code}. Skipping...")
-                return None  # Return None so your loop knows to move on
+                print(f"Colocolization is not succesfull for this locus pair. No results to read. Skipping...")
+                return None
 
             except pd.errors.EmptyDataError:
-                # Catch just in case R created the file but it was completely empty
-                print(f"Loci data file was empty for {phen_code}. Skipping...")
+                print(f"Colocolization is not succesfull for this locus pair. No results to read. Skipping...")
                 return None
-            
-            
-
-
-
-
-
-
-
-
-
-            # Merge all 7 fine-mapping columns back into your main dataframe
-            new_columns = ["PIP", "CS", "CS_prob", "low_purity", "lead_r2", "post_mean", "post_sd", "lambda"]
-            
-            for col in new_columns:
-                susie_df[col] = r_results[col].values
-
-            susie_df.insert(0, "phen_id", phen_code)
-            susie_df.insert(1, "locus_id", locus_string)
-            
-            # Append to master list
-            all_susie_results.append(susie_df)
-
         except subprocess.CalledProcessError as e:
-            print(f"SuSiE R script failed for this locus.")
+            print(f"Coloc R script failed for this locus pair.")
             print(f"R Error Output:\n{e.stderr}")
-            continue
-
-
-
-
-
-
-
-
-
+            return None
 
 
 if __name__ == "__main__":
 
-    if len(sys.argv) < 4:
-        print("Error: missing arguments")
-        sys.exit(1)
+    data1 = pd.read_csv('/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/1747_2_16:88864897:90176290_data.csv', sep='\t')
+    matrix1 = pd.read_csv('/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/1747_2_16:88864897:90176290_matrix.csv', header=None)
+    n1 = 360000
+    k1_covariates = 13
+    trait1_type ="quant"
 
-    task_id = int(sys.argv[1])-1
-    sumstats_dir = sys.argv[2]
-    phen_dict_path = sys.argv[3]
-    loci_dir = sys.argv[4]
-    ld_dir = sys.argv[5]
-    r_script_path = sys.argv[6]
-    out_dir = sys.argv[7]
+    data2 = pd.read_csv('/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/1747_1_16:89395438:90122562_data.csv', sep='\t')
+    matrix2 = pd.read_csv('/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/1747_1_16:89395438:90122562_matrix.csv', header=None)
+    n2 = 360000
+    k2_covariates = 13
+    trait2_type ="quant"
+
+    r_script_path = "/Users/sezgi/Documents/dominance_pleiotropy/scripts/loci_level/run_coloc_core.R"
+    res = run_coloc(r_script_path, data1, matrix1, n1, k1_covariates, trait1_type, data2, matrix2, n2, k2_covariates, trait2_type)
+    print(res.head())
+
+    # if len(sys.argv) < 4:
+    #     print("Error: missing arguments")
+    #     sys.exit(1)
+
+    # task_id = int(sys.argv[1])-1
+    # sumstats_dir = sys.argv[2]
+    # phen_dict_path = sys.argv[3]
+    # loci_dir = sys.argv[4]
+    # ld_dir = sys.argv[5]
+    # r_script_path = sys.argv[6]
+    # out_dir = sys.argv[7]
 
     # sumstats_dir = (
     #     "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sumstats_QCed"
@@ -453,25 +436,22 @@ if __name__ == "__main__":
     # r_script_path = "/Users/sezgi/Documents/dominance_pleiotropy/scripts/loci_level/run_SuSie_core.R"
     # out_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results"
 
-    traits = pd.read_excel(phen_dict_path, 
-                           usecols=["phenotype_code", "description", "n_non_missing"]
-                           )
+    # traits = pd.read_excel(phen_dict_path, 
+    #                        usecols=["phenotype_code", "description", "n_non_missing"]
+    #                        )
 
-    traits = traits.sort_values(by="phenotype_code").reset_index(drop=True)
-    row = traits.iloc[task_id]
-    # traits= traits[traits["phenotype_code"] == "1747_2"]
-    # row = traits.iloc[0]
+    # traits = traits.sort_values(by="phenotype_code").reset_index(drop=True)
+    # row = traits.iloc[task_id]
+    # # traits= traits[traits["phenotype_code"] == "1747_2"]
+    # # row = traits.iloc[0]
 
-    col_names = ["Phenotype", "Locus", "Total_sig", "Multi-allelic_sig", "Ratio"]
-    df_dup = pd.DataFrame(columns=col_names)
-    mult_SNPs = set()
-    print(row)
+    # col_names = ["Phenotype", "Locus", "Total_sig", "Multi-allelic_sig", "Ratio"]
+    # df_dup = pd.DataFrame(columns=col_names)
+    # mult_SNPs = set()
+    # print(row)
 
-    phen_code = row["phenotype_code"]
-    phen_name = row["description"]
-    sample_size = int(row["n_non_missing"])
+    # phen_code = row["phenotype_code"]
+    # phen_name = row["description"]
+    # sample_size = int(row["n_non_missing"])
 
-    print(f"Processing: {phen_name} ({phen_code})")
-    
-    run_coloc(sumstats_dir, loci_dir, sample_size, phen_code, ld_dir, r_script_path,
-              out_dir)
+    # print(f"Processing: {phen_name} ({phen_code})")
