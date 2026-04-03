@@ -20,7 +20,7 @@ compute_yty <- function(beta, se, p, R, n, k) {
 
 
 # Run SuSiE for coloc
-run_susie_pipeline <- function(data_file, matrix_file, n, k_covariates, trait_type, prop_cases = NULL) {
+run_susie_pipeline <- function(data_file, matrix_file, n, k_covariates, prop_cases, trait_type) {
   
   # 1. Load Data
   df <- fread(data_file, data.table = FALSE)
@@ -117,7 +117,7 @@ format_coloc_results <- function(susie_coloc_res, out_file, h4_threshold = 0.50)
 
 # ---------------------- THE EXECUTION FLOW -------------------------#
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) != 11) {
+if (length(args) != 13) {
   stop("Usage: Rscript run_coloc_core.R <stats_file1.tsv> <ld_matrix1.csv> <n_samples1> <k_samples1>
        <stats_file2.tsv> <ld_matrix2.csv> <n_samples2> <k_samples2> <out_file.tsv>")
 }
@@ -128,17 +128,19 @@ data_file1 <- args[1]
 ld_file1 <- args[2]
 n_samples1 <- as.numeric(args[3])
 k1_covariates <- as.numeric(args[4])
-type1 <- args[5]
+prop_cases1 <- as.numeric(args[5])
+type1 <- args[6]
 
 # Trait 2
-data_file2 <- args[6]
-ld_file2 <- args[7]
-n_samples2 <- as.numeric(args[8])
-k2_covariates <- as.numeric(args[9])
-type2 <- args[10]
+data_file2 <- args[7]
+ld_file2 <- args[8]
+n_samples2 <- as.numeric(args[9])
+k2_covariates <- as.numeric(args[10])
+prop_cases2 <- as.numeric(args[11])
+type2 <- args[12]
 
 # tmp output
-out_file <- args[11]
+out_file <- args[13]
 
 
 # ---------------------- Run Trait 1 -------------------------#
@@ -148,6 +150,7 @@ susie_trait1 <- tryCatch({
     matrix_file = ld_file1,
     n = n_samples1,
     k_covariates = k1_covariates,
+    prop_cases = prop_cases1,
     trait_type = type1
   )
 }, error = function(e) {
@@ -164,6 +167,7 @@ susie_trait2 <- tryCatch({
     data_file = data_file2,
     n = n_samples2,
     k_covariates = k2_covariates,
+    prop_cases = prop_cases2,
     trait_type = type2
   )
 }, error = function(e) {

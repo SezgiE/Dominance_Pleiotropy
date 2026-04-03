@@ -5,335 +5,63 @@ import tempfile
 import subprocess
 import numpy as np
 import pandas as pd
+from pathlib import Path
+from collections import defaultdict
 
 
-def get_ld_matrix(snp_list, ld_dir):
+def get_data_dict(data_dir):
+    
+    path = Path(data_dir)
+
+    pheno_to_loci = defaultdict(list)
+
+    for f in path.glob('*__*matrix.csv'):
+
+        parts = f.stem.split('__')
+        
+        if len(parts) == 2:
+            phen_id = parts[0]
+            locus_id = parts[1].replace('_matrix', '')
+    
+            pheno_to_loci[phen_id].append(locus_id)
+    
+    return dict(pheno_to_loci)
+
+
+def get_data(data_dir, phen_info_path, phen_code, locus_id):
+
+    data_df = pd.read_csv(f"{data_dir}/{phen_code}__{locus_id}_data.csv", sep='\t')
+    ld_matrix = pd.read_csv(f"{data_dir}/{phen_code}__{locus_id}_matrix.csv", header=None)
+    phen_info = pd.read_excel(phen_info_path, usecols=["phenotype_code", "description", 
+                                                       "n_non_missing", "variable_type", "n_cases"])
+
+    N = phen_info[phen_info["phenotype_code"] == phen_code]["n_non_missing"].values[0]
+    k_covariates = 25
+    n_cases = phen_info[phen_info["phenotype_code"] == phen_code]["n_cases"].fillna(0).values[0]
+    t_type = phen_info[phen_info["phenotype_code"] == phen_code]["variable_type"].values[0]
+    
+    prop_cases = n_cases / N
+    trait_type = "quant" if t_type == "continuous_irnt" else "cc"
+    
+    return data_df, ld_matrix, N, k_covariates, prop_cases, trait_type
+
+
+def check_overlap(locus1, locus2):
     """
-    Takes a list of SNPs and returns an NxN pairwise LD correlation matrix (r).
+    Returns True if two locus strings (chr_start_end) overlap.
     """
-    if not snp_list:
-        return np.array([]).reshape(0, 0), None
-
-    chroms = set([s[0] for s in snp_list])
-    if len(chroms) > 1:
-        raise ValueError("All SNPs in the locus must be on the same chromosome.")
-    chrom = chroms.pop()
-
-    positions_tmp = sorted([s[1] for s in snp_list])
-
-    # Identify locus boundaries
-    min_pos = positions_tmp[0]
-    max_pos = positions_tmp[-1]
-
-    # Locate the single encompassing LD chunk
-    chunk_files = glob.glob(os.path.join(ld_dir, f"chr{chrom}_*.npz"))
-    target_npz = None
-    target_gz = None
-
-    for npz_file in chunk_files:
-        basename = os.path.basename(npz_file).replace(".npz", "")
-        parts = basename.split("_")
-        start = int(parts[1])
-        end = int(parts[2])
-
-        # Check if the chunk fully contains our locus range
-        if start <= min_pos and end >= max_pos:
-            target_npz = npz_file
-            target_gz = os.path.join(ld_dir, f"{basename}.gz")
-            break
-
-    if not target_npz or not os.path.exists(target_gz):
-        print(f"No single LD chunk found covering the range {min_pos} - {max_pos}.")
-        return np.array([]).reshape(0, 0), None
-
-    # Load manifest file for LD data
-    manifest = pd.read_csv(target_gz, compression="gzip", sep="\t")
-    pos_col = "position"
-
-    manifest_subset = manifest[manifest[pos_col].isin(positions_tmp)]
-
-    # Remove multiallelic variants
-    manifest_subset = manifest_subset.drop_duplicates(subset=[pos_col], keep=False)
-
-    if manifest_subset.empty:
-        return np.array([]).reshape(0, 0), None
-
-    # Map to chunk indices
-    positions = sorted(manifest_subset[pos_col].tolist())
-    pos_to_idx = {pos: i for i, pos in enumerate(positions)}
-    chunk_idx_to_pos = dict(zip(manifest_subset.index, manifest_subset[pos_col]))
-    chunk_indices = list(chunk_idx_to_pos.keys())
-
-    # Initiate an identity matrix
-    N = len(positions)
-    R_matrix = np.eye(N)
-
-    # Load the LD matrix and filter
-    with np.load(target_npz) as ld_data:
-        row_indices = ld_data["row"]
-        col_indices = ld_data["col"]
-        correlation_data = ld_data["data"]
-
-    valid_mask = np.isin(row_indices, chunk_indices) & np.isin(
-        col_indices, chunk_indices
-    )
-
-    valid_rows = row_indices[valid_mask]
-    valid_cols = col_indices[valid_mask]
-    valid_data = correlation_data[valid_mask]
-
-    # Populate the NxN matrix symmetrically
-    for r, c, val in zip(valid_rows, valid_cols, valid_data):
-        p1 = chunk_idx_to_pos[r]
-        p2 = chunk_idx_to_pos[c]
-        i = pos_to_idx[p1]
-        j = pos_to_idx[p2]
-
-        R_matrix[i, j] = val
-        R_matrix[j, i] = val
-
-    # Sorting
-    sort_order = np.argsort(positions)
-    matrix_manifest = np.array(positions)[sort_order].tolist()
-    ld_matrix = R_matrix[sort_order, :][:, sort_order]
-
-    # Make sure its symmetrical
-    np.fill_diagonal(ld_matrix, 1.0)
-    ld_matrix = (ld_matrix + ld_matrix.T) / 2.0
-
-    # Dominance LD
-    ld_matrix_2 = ld_matrix ** 2
-
-    # Make sure no NAs
-    if np.isnan(ld_matrix_2).any():
-        print("Warning: NaNs detected in LD matrix. Neutralizing to 0.")
-        ld_matrix_2 = np.nan_to_num(ld_matrix_2, nan=0.0)
-
-    return ld_matrix_2, matrix_manifest
-
-
-def get_data(phen_code, sumstat_dir, loci_dir):
-    """Gets  data and filtering out the MHC region."""
-
-    MHC_chr = 6
-    MHC_start = 25000000
-    MHC_end = 34000000
-
-    # Load Data
-    raw_df = pd.read_csv(
-        f"{sumstat_dir}/{phen_code}_sig_SNPs.tsv.bgz", sep="\t", compression="gzip"
-    )
-    loci_df = pd.read_csv(
-        f"{loci_dir}/{phen_code}_sig_loci.tsv",
-        sep="\t",
-        usecols=["variant", "ld_start", "ld_end", "ld_id"],
-    )
-
-    if loci_df.empty:
-        print("No loci to plot.")
-        return None
-
-    # Mask Raw SNPs and omit the one in the MCH regions
-    mhc_snps = (
-        (raw_df["chr"] == MHC_chr)
-        & (raw_df["pos"] >= MHC_start)
-        & (raw_df["pos"] <= MHC_end)
-    )
-    masked_df = raw_df[~mhc_snps].reset_index(drop=True)
-
-    if masked_df.empty:
-        return None
-
-    # Process and Mask Loci Blocks
-    unique_blocks = loci_df[["ld_id"]].dropna().drop_duplicates().reset_index(drop=True)
-    unique_blocks[["chr", "start_bp", "end_bp"]] = (
-        unique_blocks["ld_id"].str.split(":", expand=True).astype(int)
-    )
-
-    # Filtering out the LD block in the MHC region
-    mhc_blocks = (
-        (unique_blocks["chr"] == MHC_chr)
-        & (unique_blocks["start_bp"] <= MHC_end)
-        & (unique_blocks["end_bp"] >= MHC_start)
-    )
-
-    masked_blocks = unique_blocks[~mhc_blocks].reset_index(drop=True)
-
-    if masked_blocks.empty:
-        print(f"No locus to run SuSiE for '{phen_code}'. Skipping...")
-        return None
-
-    print(f"Found {len(masked_blocks)} unique loci to run SuSiE for.")
-
-    return masked_df, masked_blocks
-
-
-def run_coloc1(
-    sumstats_dir,
-    loci_dir,
-    sample_size,
-    phen_code,
-    ld_dir,
-    r_script_path,
-    output_dir,
-    buffer_kb=50,
-):
-    """Executes SuSiE fine-mapping on independent loci."""
-
-    # ------------------- Load data --------------------- #
-    try:
-        results = get_data(phen_code, sumstats_dir, loci_dir)
-
-        if results is None:
-            sys.exit(1)
-
-        sumstat_data, unique_blocks = results
-
-    except FileNotFoundError:
-        print(f"No significant loci data for {phen_code} ")
-        sys.exit(1)
-    # ------------------- Load data --------------------- #
+    chr1, start1, end1 = locus1.split('_')
+    chr2, start2, end2 = locus2.split('_')
     
-
-    all_susie_results = []
-
-    # Create the output directory
-    os.makedirs(output_dir, exist_ok=True)
-
-    # Loop over the independen LD blocks
-    for row in unique_blocks.itertuples(index=False):
-        chrom = row.chr
-        start_bp = row.start_bp
-        end_bp = row.end_bp
-
-        locus_string = f"{chrom}:{start_bp}:{end_bp}"
-
-        # Define the LD  window (add the buffer)
-        ld_start = start_bp - (buffer_kb * 1000)
-        ld_end = end_bp + (buffer_kb * 1000)
-
-        # Slice the LD block from the summary statistics
-        block_df = (
-            sumstat_data[
-                (sumstat_data["chr"] == chrom)
-                & (sumstat_data["pos"] >= ld_start)
-                & (sumstat_data["pos"] <= ld_end)
-            ]
-            .copy()
-            .sort_values(by="pos")
-            .reset_index(drop=True)
-        )
-
-        # List of variant for which LD matrix will be obtained
-        var_list = list(zip(block_df["chr"].astype(int), block_df["pos"].astype(int)))
+    # Must be on the same chromosome
+    if chr1 != chr2:
+        return False
+        
+    # Check for coordinate overlap (start1 <= end2 AND start2 <= end1)
+    return int(start1) <= int(end2) and int(start2) <= int(end1)
 
 
-        # Get the LD matrix
-        print("Obtaining LD matrix...")
-        try:
-            ld_matrix, matrix_manifest = get_ld_matrix(var_list, ld_dir)
-            if ld_matrix.size == 0 or matrix_manifest is None:
-                continue
-        except ValueError as e:
-            print(f"Skipping locus {chrom}:{start_bp}-{end_bp} - {e}")
-            continue
-
-
-        # Remove the variants where  no LD information is available
-        # Define the exact columns you want to keep
-        cols_to_keep = ["variant", "chr", "pos", "minor_AF", "rsid", 
-                        "dominance_beta", "dominance_se", "dom_z_score"]
-
-        susie_df = (
-            block_df.loc[block_df["pos"].isin(matrix_manifest), cols_to_keep]
-            .copy()
-            .sort_values(by="pos")
-            .reset_index(drop=True)
-        )
-
-
-        # -------------------  Double Check Data Alignment ---------------------- #
-        if (
-            len(susie_df) != ld_matrix.shape[0]
-            or susie_df["pos"].tolist() != matrix_manifest
-        ):
-            print(f"Alignment failed for locus {locus_string}. Skipping.")
-            continue
-        print(
-            "The LD matrix is successfully obtained and aligned with summary statistics"
-        )
-        # -------------------  Double Check Data Alignment ---------------------- #
-
-
-        #-------------------------- Run SuSie in R -------------------------------#
-        print(
-            f"Running SuSiE for locus {chrom}:{start_bp}-{end_bp} with {len(susie_df)} SNPs..."
-        )
-
-        # A temporary directory
-        with tempfile.TemporaryDirectory() as tmpdir:
-            susie_df_file = os.path.join(tmpdir, "susie_df.tsv")
-            ld_file = os.path.join(tmpdir, "ld_matrix.csv")
-            out_file = os.path.join(tmpdir, "susieR_results.tsv")
-
-            # Write the data to disk for R to read
-            susie_df.to_csv(susie_df_file, sep='\t', index=False)
-            np.savetxt(ld_file, ld_matrix, delimiter=",")
-
-            # Call the R script via the command line
-            command = [
-                "Rscript", 
-                r_script_path, 
-                susie_df_file, 
-                ld_file, 
-                str(sample_size), 
-                out_file
-            ]
-
-            try:
-                # Run the command and wait for it to finish
-                subprocess.run(command, check=True, capture_output=True, text=True)
-                
-                # Read the results back from R
-                r_results = pd.read_csv(out_file, sep='\t')
-                
-                # Merge all 7 fine-mapping columns back into your main dataframe
-                new_columns = ["PIP", "CS", "CS_prob", "low_purity", "lead_r2", "post_mean", "post_sd", "lambda"]
-                
-                for col in new_columns:
-                    susie_df[col] = r_results[col].values
-
-                susie_df.insert(0, "phen_id", phen_code)
-                susie_df.insert(1, "locus_id", locus_string)
-                
-                # Append to master list
-                all_susie_results.append(susie_df)
-
-            except subprocess.CalledProcessError as e:
-                print(f"SuSiE R script failed for this locus.")
-                print(f"R Error Output:\n{e.stderr}")
-                continue
-
-            #-------------------------- Run SuSie in R -------------------------------#
-
-
-        # Save the final locus-specific dataframe and locus matrix
-        os.makedirs(f"{output_dir}/susie_raw_files", exist_ok=True)
-        np.savetxt(f"{output_dir}/susie_raw_files/{phen_code}_{chrom}:{start_bp}:{end_bp}_matrix.csv", ld_matrix, delimiter=",")
-        susie_df.to_csv(f"{output_dir}/susie_raw_files/{phen_code}_{chrom}:{start_bp}:{end_bp}_data.csv", sep='\t', index=False)
-
-    print("Merging all loci into master dataframe...")
-    susie_res_df = pd.concat(all_susie_results, ignore_index=True)
-    
-    final_out = os.path.join(output_dir, f"{phen_code}_susie_res.tsv")
-    susie_res_df.to_csv(final_out, sep='\t', index=False)
-    print(f"Success! Saved results to {final_out}")
-
-    
-    return all_susie_results
-
-
-def run_coloc(r_script_path, trait_1_df, ld1, n1, k1, t1_type, trait_2_df, ld2, n2, k2, t2_type):
+def run_coloc(r_script_path, trait_1_df, ld1, n1, k1, prop_cases1, t1_type, trait_2_df, ld2, n2, k2, prop_cases2, t2_type):
 
     #-------------------------- Run Coloc in R -------------------------------#
 
@@ -364,13 +92,15 @@ def run_coloc(r_script_path, trait_1_df, ld1, n1, k1, t1_type, trait_2_df, ld2, 
             ld1_file,
             str(n1),
             str(k1),
+            str(prop_cases1),
             t1_type,
             df2_file,
             ld2_file,
             str(n2),
             str(k2),
+            str(prop_cases2),
             t2_type,
-            out_file    
+            out_file   
         ]
 
         try:
@@ -395,23 +125,104 @@ def run_coloc(r_script_path, trait_1_df, ld1, n1, k1, t1_type, trait_2_df, ld2, 
             return None
 
 
+def main(r_script_path, phen_info_path, data_dir, phen_code, out_dir):
+
+    locus_ids = phen_to_loci.get(phen_code, [])
+    print(f"Processing phenotype: {phen_code}")
+    print(f"Number of loci for phenotype {phen_code}: {len(locus_ids)}")
+
+    result_dfs = []
+
+    for locus in locus_ids:
+
+        print(f"Processing phenotype {phen_code} locus: {locus}")
+
+        # Get data for locus 1
+        trait_1_df, ld1, n1, k1, prop_cases1, trait1_type = get_data(data_dir, phen_info_path, phen_code, locus)
+
+
+        # Scan the entire dictionary for overlaps
+        for phen2, loci2_list in phen_to_loci.items():
+            for locus2 in loci2_list:
+                
+                # Skip checking the exact same phenotype and locus against itself
+                if phen2 == phen_code and locus2 == locus:
+                    continue
+                
+                if check_overlap(locus, locus2):
+
+                    print(f"Overlap found between '{phen_code} | locus: {locus}' and '{phen2} | locus: {locus2}'. Proceeding with coloc.")
+
+                    # Get data for locus 2
+                    trait_2_df, ld2, n2, k2, prop_cases2, trait2_type = get_data(data_dir, phen_info_path, phen2, locus2)
+
+                    # Run coloc
+                    print(f"Colocalizing:\nphen1: {phen_code} locus: {locus}\nphen2: {phen2} locus: {locus2}")
+
+                    coloc_results = run_coloc(r_script_path, trait_1_df, ld1, n1, k1, prop_cases1, trait1_type, 
+                                              trait_2_df, ld2, n2, k2, prop_cases2, trait2_type)
+                    
+                    if coloc_results is None:
+                        print(f"Colocalization failed. Skipping...")
+                        continue
+
+                    # Save coloc results
+                    coloc_results["phen1"] = phen_code
+                    coloc_results["locus1"] = locus
+                    coloc_results["phen2"] = phen2
+                    coloc_results["locus2"] = locus2
+
+                    # Adjust column order
+                    front_cols = ["phen1", "locus1", "phen2", "locus2"]
+                    other_cols = [col for col in coloc_results.columns if col not in front_cols]
+                    
+                    coloc_results = coloc_results[front_cols + other_cols]
+                    
+                    result_dfs.append(coloc_results)
+                    print(f"Coloc completed for {locus} and {locus2}. Results added to the list.")
+                
+                else:
+                    print(f"No overlap between '{phen_code} | locus: {locus}' and '{phen2} | locus: {locus2}'.\nSkipping coloc for this pair.")
+
+    if result_dfs:
+        # Concatenate all coloc results
+        final_coloc_df = pd.concat(result_dfs, ignore_index=True)
+
+        output_path = os.path.join(out_dir, f"{phen_code}_coloc_results.tsv")
+        final_coloc_df.to_csv(output_path, index=False, sep='\t')
+
+
 if __name__ == "__main__":
 
-    data1 = pd.read_csv('/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/1747_2_16:88864897:90176290_data.csv', sep='\t')
-    matrix1 = pd.read_csv('/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/1747_2_16:88864897:90176290_matrix.csv', header=None)
-    n1 = 360000
-    k1_covariates = 13
-    trait1_type ="quant"
 
-    data2 = pd.read_csv('/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/1747_1_16:89395438:90122562_data.csv', sep='\t')
-    matrix2 = pd.read_csv('/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/1747_1_16:89395438:90122562_matrix.csv', header=None)
-    n2 = 360000
-    k2_covariates = 13
-    trait2_type ="quant"
+
 
     r_script_path = "/Users/sezgi/Documents/dominance_pleiotropy/scripts/loci_level/run_coloc_core.R"
-    res = run_coloc(r_script_path, data1, matrix1, n1, k1_covariates, trait1_type, data2, matrix2, n2, k2_covariates, trait2_type)
-    print(res.head())
+    phen_info_path = "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/phen_dict.xlsx"
+    data_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/"
+    out_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/coloc_results"
+
+    phen_to_loci = get_data_dict("/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/")
+    main(r_script_path, phen_info_path, data_dir, "1747_2", out_dir)
+
+
+
+    # data1 = pd.read_csv('/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/1747_2__16_88864897_90176290_data.csv', sep='\t')
+    # matrix1 = pd.read_csv('/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/1747_2__16_88864897_90176290_matrix.csv', header=None)
+    # n1 = 360000
+    # k1_covariates = 13
+    # prop_cases1 = 0.1
+    # trait1_type ="quant"
+
+    # data2 = pd.read_csv('/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/1747_1__16_89395438_90122562_data.csv', sep='\t')
+    # matrix2 = pd.read_csv('/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/1747_1__16_89395438_90122562_matrix.csv', header=None)
+    # n2 = 360000
+    # k2_covariates = 13
+    # prop_cases2 = 0.1
+    # trait2_type ="quant"
+
+    # res = run_coloc(r_script_path, data1, matrix1, n1, k1_covariates, prop_cases1, trait1_type, data2, matrix2, n2, k2_covariates, prop_cases2, trait2_type)
+    # print(res.head())
 
     # if len(sys.argv) < 4:
     #     print("Error: missing arguments")
