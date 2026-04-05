@@ -78,39 +78,53 @@ run_susie_pipeline <- function(data_file, matrix_file, n, k_covariates, prop_cas
 # Format and save significant colocalization results
 format_coloc_results <- function(susie_coloc_res, out_file, h4_threshold = 0.50) {
   
+  # Find significant rows
   sig_rows <- which(susie_coloc_res$summary$PP.H4.abf >= h4_threshold)
   
   if (length(sig_rows) == 0) {
-    cat(sprintf("No pleiotropic signals met the >= %.2f threshold at this locus.\n", h4_threshold))
+    cat(sprintf("No pleiotropic signals met the >= %.2f threshold at this locus. Skipping...\n", h4_threshold))
     return(FALSE) # Signal to the main script that nothing was found
   } 
   
-  # Subset and process the dataframe
+  # Extract base results
   res_df <- as.data.frame(susie_coloc_res$results)
-  cols_to_keep <- c("snp", paste0("SNP.PP.H4.row", sig_rows))
-  filtered_res_df <- res_df[, cols_to_keep, drop = FALSE]
   
   cs1_indices <- susie_coloc_res$summary$idx1[sig_rows]
   cs2_indices <- susie_coloc_res$summary$idx2[sig_rows]
   
-  ordered_cols <- c("snp")
+  # Initialize an empty list to store the long-format blocks
+  long_format_list <- list()
   
+  # Loop through each significant signal and create a stacked block
   for (i in seq_along(sig_rows)) {
-    base_name <- paste0("cs", cs1_indices[i], "_cs", cs2_indices[i])
-    pip_col <- paste0(base_name, "_PIP")
-    h4_col <- paste0(base_name, "_H4")
     
-    old_col <- paste0("SNP.PP.H4.row", sig_rows[i])
-    names(filtered_res_df)[names(filtered_res_df) == old_col] <- pip_col
-    filtered_res_df[[h4_col]] <- susie_coloc_res$summary$PP.H4.abf[sig_rows[i]]
+    # Identify the specific column holding the PIP for this signal
+    row_num <- sig_rows[i]
+    pip_col_name <- paste0("SNP.PP.H4.row", row_num)
     
-    ordered_cols <- c(ordered_cols, pip_col, h4_col)
+    # Construct the signal label
+    cs_label <- paste0("cs", cs1_indices[i], "_cs", cs2_indices[i])
+    
+    # Extract the global H4 for this specific signal
+    h4_val <- susie_coloc_res$summary$PP.H4.abf[row_num]
+    
+    # Create the temporary long dataframe for this specific signal
+    temp_df <- data.frame(
+      variant = res_df$snp,
+      cs = cs_label,
+      cs_H4 = h4_val,
+      PIP = res_df[[pip_col_name]]
+    )
+    
+    # Add to our list
+    long_format_list[[i]] <- temp_df
   }
   
-  filtered_res_df <- filtered_res_df[, ordered_cols, drop = FALSE]
+  final_long_df <- do.call(rbind, long_format_list)
+  final_long_df <- final_long_df[final_long_df$PIP > 0, ]
+  final_long_df <- final_long_df[order(final_long_df$cs, -final_long_df$PIP), ]
+  fwrite(final_long_df, out_file, sep = "\t", quote = FALSE, row.names = FALSE)
   
-  # Write the file
-  fwrite(filtered_res_df, out_file, sep = "\t", quote = FALSE)
   return(TRUE) # Signal success
 }
 

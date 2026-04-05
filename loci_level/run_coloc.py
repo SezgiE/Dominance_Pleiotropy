@@ -194,9 +194,6 @@ def main(r_script_path, phen_info_path, data_dir, phen_code, out_dir):
 
 if __name__ == "__main__":
 
-
-
-
     r_script_path = "/Users/sezgi/Documents/dominance_pleiotropy/scripts/loci_level/run_coloc_core.R"
     phen_info_path = "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/phen_dict.xlsx"
     data_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/"
