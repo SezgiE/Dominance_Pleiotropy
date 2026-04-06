@@ -28,12 +28,10 @@ def get_data_dict(data_dir):
     return dict(pheno_to_loci)
 
 
-def get_data(data_dir, phen_info_path, phen_code, locus_id):
+def get_data(data_dir, phen_info, phen_code, locus_id):
 
     data_df = pd.read_csv(f"{data_dir}/{phen_code}__{locus_id}_data.csv", sep='\t')
     ld_matrix = pd.read_csv(f"{data_dir}/{phen_code}__{locus_id}_matrix.csv", header=None)
-    phen_info = pd.read_excel(phen_info_path, usecols=["phenotype_code", "description", 
-                                                       "n_non_missing", "variable_type", "n_cases"])
 
     N = phen_info[phen_info["phenotype_code"] == phen_code]["n_non_missing"].values[0]
     k_covariates = 25
@@ -125,10 +123,10 @@ def run_coloc(r_script_path, trait_1_df, ld1, n1, k1, prop_cases1, t1_type, trai
             return None
 
 
-def main(r_script_path, phen_info_path, data_dir, phen_code, out_dir):
+def main(r_script_path, phen_info, data_dir, phen_code, out_dir):
 
     locus_ids = phen_to_loci.get(phen_code, [])
-    print(f"Processing phenotype: {phen_code}")
+    print(f"Starting coloc for phenotype: {phen_code}")
     print(f"Number of loci for phenotype {phen_code}: {len(locus_ids)}")
 
     result_dfs = []
@@ -138,7 +136,7 @@ def main(r_script_path, phen_info_path, data_dir, phen_code, out_dir):
         print(f"Processing phenotype {phen_code} locus: {locus}")
 
         # Get data for locus 1
-        trait_1_df, ld1, n1, k1, prop_cases1, trait1_type = get_data(data_dir, phen_info_path, phen_code, locus)
+        trait_1_df, ld1, n1, k1, prop_cases1, trait1_type = get_data(data_dir, phen_info, phen_code, locus)
 
 
         # Scan the entire dictionary for overlaps
@@ -154,7 +152,7 @@ def main(r_script_path, phen_info_path, data_dir, phen_code, out_dir):
                     print(f"Overlap found between '{phen_code} | locus: {locus}' and '{phen2} | locus: {locus2}'. Proceeding with coloc.")
 
                     # Get data for locus 2
-                    trait_2_df, ld2, n2, k2, prop_cases2, trait2_type = get_data(data_dir, phen_info_path, phen2, locus2)
+                    trait_2_df, ld2, n2, k2, prop_cases2, trait2_type = get_data(data_dir, phen_info, phen2, locus2)
 
                     # Run coloc
                     print(f"Colocalizing:\nphen1: {phen_code} locus: {locus}\nphen2: {phen2} locus: {locus2}")
@@ -194,72 +192,33 @@ def main(r_script_path, phen_info_path, data_dir, phen_code, out_dir):
 
 if __name__ == "__main__":
 
+    # Define paths
     r_script_path = "/Users/sezgi/Documents/dominance_pleiotropy/scripts/loci_level/run_coloc_core.R"
-    phen_info_path = "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/phen_dict.xlsx"
     data_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/"
+    phen_info_path = "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/phen_dict.xlsx"
     out_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/coloc_results"
 
-    phen_to_loci = get_data_dict("/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/")
-    main(r_script_path, phen_info_path, data_dir, "1747_2", out_dir)
+    # phen_info = pd.read_excel(phen_info_path, usecols=["phenotype_code", 
+    #                                                    "description", "n_non_missing", 
+    #                                                    "variable_type", "n_cases"])
 
+    # phen_codes = phen_info["phenotype_code"].tolist()
+    # phen_to_loci = get_data_dict(data_dir)
 
+    # for phen_code in phen_to_loci.keys():
+        
+    #     main(r_script_path, phen_info, data_dir, phen_code, out_dir)
 
-    # data1 = pd.read_csv('/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/1747_2__16_88864897_90176290_data.csv', sep='\t')
-    # matrix1 = pd.read_csv('/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/1747_2__16_88864897_90176290_matrix.csv', header=None)
-    # n1 = 360000
-    # k1_covariates = 13
-    # prop_cases1 = 0.1
-    # trait1_type ="quant"
+    merged = pd.concat(pd.read_csv(f, sep='\t') for f in glob.glob(f'{out_dir}/*coloc_results.tsv'))
+    merged = merged[merged['cs_H4'] >= 0.8]
 
-    # data2 = pd.read_csv('/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/1747_1__16_89395438_90122562_data.csv', sep='\t')
-    # matrix2 = pd.read_csv('/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/1747_1__16_89395438_90122562_matrix.csv', header=None)
-    # n2 = 360000
-    # k2_covariates = 13
-    # prop_cases2 = 0.1
-    # trait2_type ="quant"
+    df_sorted = merged.sort_values(
+        by=['phen1', 'locus1', 'phen2', 'locus2', 'PIP'], 
+        ascending=[True, True, True, True, False]
+    )
 
-    # res = run_coloc(r_script_path, data1, matrix1, n1, k1_covariates, prop_cases1, trait1_type, data2, matrix2, n2, k2_covariates, prop_cases2, trait2_type)
-    # print(res.head())
+    df_sorted['PIP_cumsum'] = df_sorted.groupby(['phen1', 'locus1', 'phen2', 'locus2'])['PIP'].cumsum()
+    mask = (df_sorted['PIP_cumsum'] - df_sorted['PIP']) < 0.95
 
-    # if len(sys.argv) < 4:
-    #     print("Error: missing arguments")
-    #     sys.exit(1)
-
-    # task_id = int(sys.argv[1])-1
-    # sumstats_dir = sys.argv[2]
-    # phen_dict_path = sys.argv[3]
-    # loci_dir = sys.argv[4]
-    # ld_dir = sys.argv[5]
-    # r_script_path = sys.argv[6]
-    # out_dir = sys.argv[7]
-
-    # sumstats_dir = (
-    #     "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sumstats_QCed"
-    # )
-    # phen_dict_path = (
-    #     "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/phen_dict.xlsx"
-    # )
-    # loci_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sig_loci"
-    # ld_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/ld_files"
-    # r_script_path = "/Users/sezgi/Documents/dominance_pleiotropy/scripts/loci_level/run_SuSie_core.R"
-    # out_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results"
-
-    # traits = pd.read_excel(phen_dict_path, 
-    #                        usecols=["phenotype_code", "description", "n_non_missing"]
-    #                        )
-
-    # traits = traits.sort_values(by="phenotype_code").reset_index(drop=True)
-    # row = traits.iloc[task_id]
-    # # traits= traits[traits["phenotype_code"] == "1747_2"]
-    # # row = traits.iloc[0]
-
-    # col_names = ["Phenotype", "Locus", "Total_sig", "Multi-allelic_sig", "Ratio"]
-    # df_dup = pd.DataFrame(columns=col_names)
-    # mult_SNPs = set()
-    # print(row)
-
-    # phen_code = row["phenotype_code"]
-    # phen_name = row["description"]
-    # sample_size = int(row["n_non_missing"])
-
-    # print(f"Processing: {phen_name} ({phen_code})")
+    out_df = df_sorted[mask].drop(columns=['PIP_cumsum'])
+    out_df.to_csv(f'{out_dir}/merged_coloc.tsv', sep='\t', index=False)

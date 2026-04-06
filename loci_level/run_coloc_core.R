@@ -101,6 +101,17 @@ format_coloc_results <- function(susie_coloc_res, out_file, h4_threshold = 0.50)
     # Identify the specific column holding the PIP for this signal
     row_num <- sig_rows[i]
     pip_col_name <- paste0("SNP.PP.H4.row", row_num)
+
+    # Check if the expected PIP column exists; if not, try alternative naming conventions 
+    # as coloc drops the .row1 suffix if one credible set for both traits
+    if (!(pip_col_name %in% names(res_df))) {
+      if ("SNP.PP.H4" %in% names(res_df)) {
+        pip_col_name <- "SNP.PP.H4" # Use the suffix-less name
+      } else {
+        # Absolute fallback: find whatever column contains "PP.H4"
+        pip_col_name <- grep("PP\\.H4", names(res_df), value = TRUE)[1]
+      }
+    }
     
     # Construct the signal label
     cs_label <- paste0("cs", cs1_indices[i], "_cs", cs2_indices[i])
