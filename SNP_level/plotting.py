@@ -422,7 +422,6 @@ def plot_pleiotropy_matrix(merged_df, phen_names, out_dir, chromosomes=list(rang
     ax_bottom.set_ylim(-1, len(unique_traits))
 
     #create a color palette for categories
-    # 1. Replace the plt.cm.get_cmap('tab10') lines with this custom hex palette
     unique_categories = unique_traits_df['category'].unique()
     custom_palette = ["#3C5488", '#DC0000','#00A087',"#89603D",'#8491B4', '#91D1C2',"#F39B7F",
                        '#631879',"#B09C85",'#00A05B',"#E64B35","#C59316", '#4DBBD5']

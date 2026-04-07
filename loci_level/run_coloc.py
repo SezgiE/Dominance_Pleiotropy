@@ -195,30 +195,36 @@ if __name__ == "__main__":
     # Define paths
     r_script_path = "/Users/sezgi/Documents/dominance_pleiotropy/scripts/loci_level/run_coloc_core.R"
     data_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/"
-    phen_info_path = "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/phen_dict.xlsx"
-    out_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/coloc_results"
+    phen_info_path = "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/phen_dict_renamed.xlsx"
+    out_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/coloc_results/results_by_phenotype"
 
-    # phen_info = pd.read_excel(phen_info_path, usecols=["phenotype_code", 
-    #                                                    "description", "n_non_missing", 
-    #                                                    "variable_type", "n_cases"])
+    phen_info = pd.read_excel(phen_info_path, usecols=["phenotype_code", 
+                                                       "description", "n_non_missing", 
+                                                       "variable_type", "n_cases", "category"])
 
-    # phen_codes = phen_info["phenotype_code"].tolist()
-    # phen_to_loci = get_data_dict(data_dir)
+    phen_codes = phen_info["phenotype_code"].tolist()
+    category_map = dict(zip(phen_info['phenotype_code'], phen_info['category']))
+    phen_code_to_name = dict(zip(phen_info['phenotype_code'], phen_info['description']))
+    
+    #phen_to_loci = get_data_dict(data_dir)
 
     # for phen_code in phen_to_loci.keys():
         
     #     main(r_script_path, phen_info, data_dir, phen_code, out_dir)
 
     merged = pd.concat(pd.read_csv(f, sep='\t') for f in glob.glob(f'{out_dir}/*coloc_results.tsv'))
-    merged = merged[merged['cs_H4'] >= 0.8]
+    merged = merged[(merged['cs_H4'] >= 0.8) & (merged['PIP'] >= 0.8)]
 
-    df_sorted = merged.sort_values(
-        by=['phen1', 'locus1', 'phen2', 'locus2', 'PIP'], 
-        ascending=[True, True, True, True, False]
-    )
+    merged["cat1"] = merged['phen1'].map(category_map)
+    merged["phen_name1"] = merged['phen1'].map(phen_code_to_name)
 
-    df_sorted['PIP_cumsum'] = df_sorted.groupby(['phen1', 'locus1', 'phen2', 'locus2'])['PIP'].cumsum()
-    mask = (df_sorted['PIP_cumsum'] - df_sorted['PIP']) < 0.95
 
-    out_df = df_sorted[mask].drop(columns=['PIP_cumsum'])
-    out_df.to_csv(f'{out_dir}/merged_coloc.tsv', sep='\t', index=False)
+    snp_info = merged.groupby('variant').agg(
+        n_traits=('phen1', 'nunique'),
+        n_categories=('cat1', lambda x: len(set(x))),
+        phenotypes=('phen_name1', lambda x: ', '.join(x.unique())),
+        phen_codes=('phen1', lambda x: ', '.join(x.unique()))
+    ).reset_index()
+
+    snp_info.to_csv(f'{out_dir}/snp_info.tsv', sep='\t', index=False)
+    merged.to_csv(f'{out_dir}/merged_coloc.tsv', sep='\t', index=False)
