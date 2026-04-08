@@ -423,7 +423,7 @@ def plot_pleiotropy_matrix(merged_df, phen_names, out_dir, chromosomes=list(rang
 
     #create a color palette for categories
     unique_categories = unique_traits_df['category'].unique()
-    custom_palette = ["#3C5488", '#DC0000','#00A087',"#89603D",'#8491B4', '#91D1C2',"#F39B7F",
+    custom_palette = ["#3C5488", '#DC0000','#00A087',"#89603D",'#8491B4', '#91D1C2',
                        '#631879',"#B09C85",'#00A05B',"#E64B35","#C59316", '#4DBBD5']
     
     # 3. Apply the 70% opacity to all colors at once
@@ -525,11 +525,11 @@ if __name__ == "__main__":
 
 
     sig_SNPs_df = pd.read_csv(sig_SNPs_path, sep="\t", compression="gzip", 
-                            usecols=["variant", "chr", "pos", 
+                            usecols=["variant", "chr", "pos","rsid", 
                                      "dom_sig_total", "sig_dom_traits"],
                                      dtype={"sig_dom_traits": str})
-    
-    #plot_manhattan(sig_SNPs_df, output_dir)
-    #plot_chromosome_density(sig_SNPs_df, output_dir)
+
+    plot_manhattan(sig_SNPs_df, output_dir)
+    plot_chromosome_density(sig_SNPs_df, output_dir)
     plot_pleiotropy_matrix(sig_SNPs_df, phen_names, output_dir)
-    #plot_desc_percentages(desc_file_path, output_dir)
+    plot_desc_percentages(desc_file_path, output_dir)

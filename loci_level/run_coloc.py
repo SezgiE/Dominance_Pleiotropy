@@ -1,3 +1,4 @@
+import csv
 import os
 import sys
 import glob
@@ -242,17 +243,37 @@ def compile_coloc_results(out_dir, phen_code_to_name, category_map,
             'n_traits': len(set(g['phen1']).union(set(g['phen2']))),
             'n_categories': len(set(g['cat1'].dropna()).union(set(g['cat2'].dropna()))),
             'phenotypes': ', '.join(set(g['phen_name1'].dropna()).union(set(g['phen_name2'].dropna()))),
-            'phen_codes': ', '.join(set(g['phen1']).union(set(g['phen2'])))
+            'phen_codes': ', '.join(set(g['phen1']).union(set(g['phen2']))),
+            "phen_categories": ', '.join(set(g['cat1'].dropna()).union(set(g['cat2'].dropna())))
         })
     ).reset_index()
 
 
+    # Generate .VCF file for VEP annotation
+    variants_VEP = snp_info[['variant']].copy()
+
+    variants_VEP['#CHROM'] = variants_VEP['variant'].apply(lambda x: x.split(':')[0])
+    variants_VEP['POS'] = variants_VEP['variant'].apply(lambda x: x.split(':')[1])
+    variants_VEP['ID'] = variants_VEP['variant']  # Use the full string as the ID
+    variants_VEP['REF'] = variants_VEP['variant'].apply(lambda x: x.split(':')[2])
+    variants_VEP['ALT'] = variants_VEP['variant'].apply(lambda x: x.split(':')[3])
+
+    variants_VEP['QUAL'] = '.'
+    variants_VEP['FILTER'] = '.'
+    variants_VEP['INFO'] = '.'
+
+    # Reorder columns
+    variants_VEP = variants_VEP[['#CHROM', 'POS', 'ID', 'REF', 'ALT', 'QUAL', 'FILTER', 'INFO']]
+
+
     # Save the SNP information and the high confidence coloc results
+    vep_file_path = f'{out_dir}/vep_input.vcf'    
     snp_info_path = os.path.join(out_dir, 'snp_info.tsv')
     high_conf_path = os.path.join(out_dir, 'merged_coloc.tsv')
     
     snp_info.to_csv(snp_info_path, sep='\t', index=False)
     high_conf_df.to_csv(high_conf_path, sep='\t', index=False)
+    variants_VEP.to_csv(vep_file_path, sep='\t', index=False, quoting=csv.QUOTE_NONE)
     
     print(f"Saved summaries to {out_dir}")
     return
@@ -278,7 +299,7 @@ if __name__ == "__main__":
     
 
     # Execute coloc for each phenotype and its associated loci
-    phen_to_loci = get_data_dict(data_dir)
+    # phen_to_loci = get_data_dict(data_dir)
 
     # for phen_code in phen_to_loci.keys():
     #     main(r_script_path, phen_info, data_dir, phen_code, out_dir)

@@ -49,7 +49,7 @@ def snp_desc(snp_info_path, sig_SNPs_path, phen_dict_path):
                         dtype={"variant":str, "chr":str, "pos":int, "add_sig_total":int, "dom_sig_total":int,
                                   "sig_add_traits":str, "sig_dom_traits":str})
     
-    names_list = pd.read_excel(phen_dict_path, usecols=["phen_code", "category"])
+    names_list = pd.read_excel(phen_dict_path, usecols=["phenotype_code", "category"])
 
     sig_counts = sig_df.groupby('chr').agg(
         add_sig=('add_sig_total', lambda x: (x > 0).sum()),
@@ -61,7 +61,7 @@ def snp_desc(snp_info_path, sig_SNPs_path, phen_dict_path):
     pleio_snps = sig_df[sig_df['dom_sig_total'] > 1][['variant', 'chr', 'sig_dom_traits']].copy()
     pleio_snps['sig_dom_traits'] = pleio_snps['sig_dom_traits'].str.replace(r"[()\s]", "", regex=True).str.split(",")
 
-    cat_counts = pleio_snps.explode('sig_dom_traits').merge(names_list, left_on='sig_dom_traits', right_on='phen_code', how='inner') \
+    cat_counts = pleio_snps.explode('sig_dom_traits').merge(names_list, left_on='sig_dom_traits', right_on='phenotype_code', how='inner') \
         .groupby(['chr', 'variant'])['category'].nunique()
 
     dom_pleio_cat = cat_counts[cat_counts > 1].groupby('chr').size().rename('dom_pleiotropy_category')
