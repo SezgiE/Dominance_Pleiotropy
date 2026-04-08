@@ -133,6 +133,10 @@ def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset
             legend = ax.get_legend()
             if legend:
                 handles, labels = ax.get_legend_handles_labels()
+
+                sorted_pairs = sorted(zip(handles, labels), key=lambda x: x[1])
+                handles, labels = zip(*sorted_pairs)
+
                 ax.legend(
                     handles, 
                     labels, 
@@ -158,7 +162,8 @@ def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset
 
 
     # Add titles and labels to the current active figure
-    plt.suptitle('Pleiotropic Variants across Trait Categories', y=0.95, fontsize=14, fontweight='bold')
+    plt.suptitle('Pleiotropic Variants across Trait Categories', y=0.95, fontsize=14, fontweight='bold',
+                 ha='center', family='sans-serif')
     
     # Save plot with tight bbox to prevent cutoff of trait names
     out_path = os.path.join(out_dir, filename)
