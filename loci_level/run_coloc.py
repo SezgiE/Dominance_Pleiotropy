@@ -190,6 +190,74 @@ def main(r_script_path, phen_info, data_dir, phen_code, out_dir):
         final_coloc_df.to_csv(output_path, index=False, sep='\t')
 
 
+def compile_coloc_results(out_dir, phen_code_to_name, category_map, 
+                                h4_threshold=0.8, pip_cs_threshold=0.95, rel_pip_threshold=0.1):
+    """
+    Merges coloc TSVs, constructs credible sets, filters by relative PIP, 
+    and generates a SNP-level summary.
+    """
+    print("Merging and filtering results...")
+    
+    # Read and merge the results, filter by cs_H4 >= 0.8
+    files = glob.glob(os.path.join(out_dir, '*coloc_results.tsv'))
+    if not files:
+        print("No result files found to merge.")
+        return None, None
+        
+    merged = pd.concat((pd.read_csv(f, sep='\t') for f in files), ignore_index=True)
+    merged = merged[merged['cs_H4'] >= h4_threshold]
+
+
+    # Add category and phenotype name columns
+    merged["phen_name1"] = merged['phen1'].map(phen_code_to_name)
+    merged["phen_name2"] = merged['phen2'].map(phen_code_to_name)
+    merged["cat1"] = merged['phen1'].map(category_map)
+    merged["cat2"] = merged['phen2'].map(category_map)
+
+    # Filter to keep only one direction of the pairwise comparisons (phen1 < phen2)
+    merged = merged[merged['phen1'] < merged['phen2']]
+
+
+    # Define the columns and calculate construct 95% credible sets for each combination
+    group_cols = ['phen1', 'locus1', 'phen2', 'locus2', 'cs']
+    df_sorted = merged.sort_values(
+        by= group_cols + ['PIP'], 
+        ascending=[True, True, True, True, True, False]
+    )
+
+    df_sorted['PIP_cumsum'] = df_sorted.groupby(group_cols)['PIP'].cumsum()
+    mask = (df_sorted['PIP_cumsum'] - df_sorted['PIP']) < pip_cs_threshold
+    df_cumPIP = df_sorted[mask].drop(columns=['PIP_cumsum'])
+
+
+    # Calculate the maximum PIP for each group and compute relative probabilities
+    df_cumPIP['lead_PIP'] = df_cumPIP.groupby(group_cols)['PIP'].transform('max')
+    df_cumPIP['relative_prob'] = df_cumPIP['PIP'] / df_cumPIP['lead_PIP']
+    high_conf_df = df_cumPIP[df_cumPIP['relative_prob'] >= rel_pip_threshold].copy()
+
+
+    # Summarize the number of traits, categories, and list of phenotypes for each unique SNP
+    snp_info = high_conf_df.groupby('variant').apply(
+        lambda g: pd.Series({
+            'n_traits': len(set(g['phen1']).union(set(g['phen2']))),
+            'n_categories': len(set(g['cat1'].dropna()).union(set(g['cat2'].dropna()))),
+            'phenotypes': ', '.join(set(g['phen_name1'].dropna()).union(set(g['phen_name2'].dropna()))),
+            'phen_codes': ', '.join(set(g['phen1']).union(set(g['phen2'])))
+        })
+    ).reset_index()
+
+
+    # Save the SNP information and the high confidence coloc results
+    snp_info_path = os.path.join(out_dir, 'snp_info.tsv')
+    high_conf_path = os.path.join(out_dir, 'merged_coloc.tsv')
+    
+    snp_info.to_csv(snp_info_path, sep='\t', index=False)
+    high_conf_df.to_csv(high_conf_path, sep='\t', index=False)
+    
+    print(f"Saved summaries to {out_dir}")
+    return
+
+
 if __name__ == "__main__":
 
     # Define paths
@@ -198,33 +266,22 @@ if __name__ == "__main__":
     phen_info_path = "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/phen_dict_renamed.xlsx"
     out_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/coloc_results/results_by_phenotype"
 
+    # Read phenotype information
     phen_info = pd.read_excel(phen_info_path, usecols=["phenotype_code", 
                                                        "description", "n_non_missing", 
                                                        "variable_type", "n_cases", "category"])
 
+    # Get list of phenotype codes and create mapping dictionaries
     phen_codes = phen_info["phenotype_code"].tolist()
     category_map = dict(zip(phen_info['phenotype_code'], phen_info['category']))
     phen_code_to_name = dict(zip(phen_info['phenotype_code'], phen_info['description']))
     
-    #phen_to_loci = get_data_dict(data_dir)
+
+    # Execute coloc for each phenotype and its associated loci
+    phen_to_loci = get_data_dict(data_dir)
 
     # for phen_code in phen_to_loci.keys():
-        
     #     main(r_script_path, phen_info, data_dir, phen_code, out_dir)
 
-    merged = pd.concat(pd.read_csv(f, sep='\t') for f in glob.glob(f'{out_dir}/*coloc_results.tsv'))
-    merged = merged[(merged['cs_H4'] >= 0.8) & (merged['PIP'] >= 0.8)]
 
-    merged["cat1"] = merged['phen1'].map(category_map)
-    merged["phen_name1"] = merged['phen1'].map(phen_code_to_name)
-
-
-    snp_info = merged.groupby('variant').agg(
-        n_traits=('phen1', 'nunique'),
-        n_categories=('cat1', lambda x: len(set(x))),
-        phenotypes=('phen_name1', lambda x: ', '.join(x.unique())),
-        phen_codes=('phen1', lambda x: ', '.join(x.unique()))
-    ).reset_index()
-
-    snp_info.to_csv(f'{out_dir}/snp_info.tsv', sep='\t', index=False)
-    merged.to_csv(f'{out_dir}/merged_coloc.tsv', sep='\t', index=False)
+    compile_coloc_results(out_dir, phen_code_to_name, category_map)
