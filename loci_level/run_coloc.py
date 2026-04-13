@@ -268,7 +268,7 @@ def compile_coloc_results(out_dir, phen_code_to_name, category_map,
 
     # Save the SNP information and the high confidence coloc results
     vep_file_path = f'{out_dir}/vep_input.vcf'    
-    snp_info_path = os.path.join(out_dir, 'snp_info.tsv')
+    snp_info_path = os.path.join(out_dir, 'coloc_snps.tsv')
     high_conf_path = os.path.join(out_dir, 'merged_coloc.tsv')
     
     snp_info.to_csv(snp_info_path, sep='\t', index=False)

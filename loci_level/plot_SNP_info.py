@@ -1,6 +1,7 @@
 import os
 import textwrap
 import pandas as pd
+import numpy as np
 import upsetplot as us
 import matplotlib.pyplot as plt
 
@@ -22,6 +23,18 @@ def set_style():
         'pdf.fonttype': 42,
         'ps.fonttype': 42
     })
+
+
+def set_style2():
+    plt.rcParams['font.family'] = 'sans-serif'
+    plt.rcParams['font.sans-serif'] = ['Arial']
+    plt.rcParams['font.size'] = 12
+    plt.rcParams['xtick.labelsize'] = 10
+    plt.rcParams['ytick.labelsize'] = 10
+    plt.rcParams['axes.linewidth'] = 1.0
+    plt.rcParams['xtick.major.width'] = 1.0
+    plt.rcParams['ytick.major.width'] = 1.0
+    plt.rcParams['pdf.fonttype'] = 42
 
 
 def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset.png"):
@@ -173,11 +186,114 @@ def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset
     print(f"[*] Success! Pleiotropy UpSet plot saved to: {out_path}")
 
 
+def snp_info_plot(result_df_path, output_path):
+    
+    # Data Prep
+    result_df = pd.read_csv(result_df_path, sep='\t')
+    result_df["std_b_sq"] = result_df["std_b"] ** 2 
+    result_df = result_df.sort_values(by=["category", "std_b_sq"], ascending=[True, True])
+    
+    categories = result_df["category"].unique()
+    cat_mapping = {cat: i for i, cat in enumerate(categories)}
+    result_df["cat_num"] = result_df["category"].map(cat_mapping)
+    
+    set_style2()
+    
+    # Initialize Multi-panel Figure
+    fig = plt.figure(figsize=(16, 8))
+    gs = fig.add_gridspec(2, 2, width_ratios=[1, 1.4], wspace=0.1, hspace=0.3)
+
+    # --- PANEL A: MAF Distribution ---
+    ax1 = fig.add_subplot(gs[0, 0])
+    weights1 = np.ones_like(result_df["maf"]) / len(result_df["maf"])
+    ax1.hist(result_df["maf"], bins=30, weights=weights1, color="#2c7fb8", edgecolor='black', alpha=0.7)
+    
+    maf_median = result_df["maf"].median()
+    ax1.axvline(maf_median, color='red', linestyle='--', linewidth=1)
+    ax1.text(maf_median + 0.02, ax1.get_ylim()[1]*0.8, f'Median: {maf_median:.3f}', color='red', fontsize=9)
+    
+    ax1.set_xlim(-0.02, 0.5)
+    ax1.set_ylim(0, 0.3)
+    ax1.set_yticks([0, 0.1, 0.2, 0.3])
+    ax1.set_xlabel('MAF')
+    ax1.set_ylabel('Proportion of Variants')
+    ax1.text(-0.12, 1.1, 'A', transform=ax1.transAxes, fontsize=16, fontweight='bold', va='top')
+
+
+    # --- PANEL B: Effect Size Distribution ---
+    ax2 = fig.add_subplot(gs[1, 0])
+    clipped_data = result_df["std_b_sq"].clip(upper=0.01)
+    weights2 = np.ones_like(clipped_data) / len(clipped_data)
+    ax2.hist(clipped_data, bins=30, weights=weights2, color="#7fcdbb", edgecolor='black', alpha=0.7)
+    
+    beta_median = result_df["std_b_sq"].median()
+    ax2.axvline(beta_median, color='red', linestyle='--', linewidth=1)
+    ax2.text(beta_median + 0.0002, ax2.get_ylim()[1]*0.8, f'Median: {beta_median:.4f}', color='red', fontsize=9)
+    
+    ax2.set_ylim(0, 0.4)
+    ax2.set_yticks([0, 0.1, 0.2, 0.3, 0.4])
+    ax2.set_xlim(-0.00035, 0.01)
+    ax2.set_xticks([0, 0.002, 0.004, 0.006, 0.008, 0.010001])
+    ax2.set_xticklabels(['0', '0.002', '0.004', '0.006', '0.008', '>0.01'])
+    ax2.set_xlabel('Squared Std. Effect Size (\u03B2\u00B2)')
+    ax2.set_ylabel('Proportion of Variants')
+    ax2.text(-0.12, 1.1, 'B', transform=ax2.transAxes, fontsize=16, fontweight='bold', va='top')
+
+
+    # --- PANEL C: 3D Visualization ---
+    ax = fig.add_subplot(gs[:, 1], projection='3d')
+    ax.set_box_aspect([2.0, 2.0, 1.8])
+    ax.dist = 7
+    colors_cmap = plt.get_cmap('tab10')
+    
+    # Scatter plot
+    scatter = ax.scatter(result_df["maf"], 
+                         result_df["cat_num"], 
+                         result_df["std_b_sq"], 
+                         c=result_df["cat_num"], 
+                         cmap='tab10', 
+                         s=55, 
+                         alpha=0.7, 
+                         edgecolors='w', 
+                         linewidth=0.3)
+
+    # Drop lines to floor
+    norm = plt.Normalize(vmin=result_df["cat_num"].min(), vmax=result_df["cat_num"].max())
+    cmap = plt.get_cmap('tab10')
+    for x, y, z, c_idx in zip(result_df["maf"], result_df["cat_num"], result_df["std_b_sq"], result_df["cat_num"]):
+        # Pass the normalized index to the cmap to lock the colors together
+        ax.plot([x, x], [y, y], [0, z], color=cmap(norm(c_idx)), alpha=0.6, linewidth=1.5)
+
+    # 3D Labels & Formatting
+    ax.set_xlabel('MAF', labelpad=10)
+    ax.set_zlabel('', labelpad=0) 
+    ax.text2D(-0.04, 0.5, 'Squared Std. Effect Size (\u03B2\u00B2)', 
+              transform=ax.transAxes, rotation=90, verticalalignment='center', fontsize=12)
+    
+    ax.set_yticks(range(len(categories)))
+    ax.set_yticklabels([])
+    ax.xaxis.pane.fill = ax.yaxis.pane.fill = ax.zaxis.pane.fill = False
+    ax.view_init(elev=20, azim=38)
+    
+    # Panel C Label
+    ax.text2D(-0.05, 1.042, 'C', transform=ax.transAxes, fontsize=16, fontweight='bold', va='top')
+
+    # Legend with wrapping
+    legend = ax.legend(*scatter.legend_elements(), title="Trait Categories", 
+                       loc="center left", bbox_to_anchor=(1, 0.5), frameon=False,
+                       prop={'size': 10}, title_fontsize=12)
+    
+    for i, text in enumerate(legend.get_texts()):
+        text.set_text("\n".join(textwrap.wrap(categories[i], width=25)))
+
+    plt.savefig(output_path, dpi=600, bbox_inches='tight', format='pdf')
+
+
 # ==========================================
 if __name__ == "__main__":
 
-    upset_plot(
-        coloc_filepath="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/coloc_results/snp_info.tsv",
-        vep_filepath="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/coloc_results/vep_res.txt",
-        out_dir="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/coloc_results/vep_plots"
-    )
+    coloc_snps = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/coloc_results/coloc_snps.tsv"
+    out_dir="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/loci_results" 
+
+    #upset_plot( coloc_snps, f"{out_dir}/vep_res.txt", out_dir)
+    snp_info_plot(f"{out_dir}/snp_info.tsv", f"{out_dir}/snp_info.pdf")
