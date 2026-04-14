@@ -37,6 +37,18 @@ def set_style2():
     plt.rcParams['pdf.fonttype'] = 42
 
 
+def set_style3():
+    plt.rcParams['font.family'] = 'sans-serif'
+    plt.rcParams['font.sans-serif'] = ['Arial']
+    plt.rcParams['font.size'] = 10
+    plt.rcParams['xtick.labelsize'] = 8
+    plt.rcParams['ytick.labelsize'] = 8
+    plt.rcParams['axes.linewidth'] = 1.0
+    plt.rcParams['xtick.major.width'] = 1.0
+    plt.rcParams['ytick.major.width'] = 1.0
+    plt.rcParams['pdf.fonttype'] = 42
+
+
 def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset.png"):
     """
     Loads raw Coloc and VEP files, merges them, and generates an UpSet plot 
@@ -289,89 +301,181 @@ def snp_info_plot(result_df_path, output_path):
     plt.savefig(output_path, dpi=600, bbox_inches='tight', format='pdf')
 
 
-def plot_snp_effect(df, output_filename):
+def plot_snp_effect(df_path, all_snps_df, output_filename):
     """
-    Generates a ranked variance range plot showing the spread of 
-    dominance ratios for each SNP across multiple phenotypes.
+    Generates a 2-panel figure: 
+    Panel A: Grouped bar chart showing count of significant Additive vs Dominant traits per SNP.
+    Panel B: Ranked variance range plot showing the spread of dominance ratios.
     """
-    pval = np.log10(5e-8)
-    df = pd.read_csv(df, sep='\t')
 
-    # Dominance Ratio
-    df_valid = df[df['add_log10_pval'] > pval].copy()
+    pval_thresh = -np.log10((5e-8)/1060) 
+    df = pd.read_csv(df_path, sep='\t')
+    all_snps = pd.read_csv(all_snps_df, compression="gzip", sep='\t', 
+                           usecols=['variant', "rsid", "add_sig_total"])
+
+    # Dominance Ratio for valid additive traits
+    df_valid = df[df['add_log10_pval'] > pval_thresh].copy()
     df_valid['dom_ratio'] = df_valid['std_dom_b'] / df_valid['std_add_b']
-
-    
-    # Clip extremes to keep the plot scale readable (focusing on the biological range)
     df_valid['dom_ratio_clipped'] = df_valid['dom_ratio'].clip(lower=-2, upper=2)
 
-    # 2. Aggregate data per SNP: get min, max, and median
-    snp_stats = df_valid.groupby('snp')['dom_ratio_clipped'].agg(
+    # Aggregate data per SNP for Panel B
+    snp_stats = df_valid.groupby('variant')['dom_ratio_clipped'].agg(
         ['min', 'max', 'median']
     ).reset_index()
 
-    # 3. Sort SNPs strictly by their median dominance ratio (Creates the S-curve)
+    # Calculate INDEPENDENT counts for Panel A
+    sig_add_mask = df["add_log10_pval"] > pval_thresh
+
+    add_counts = df[sig_add_mask].groupby('variant').size().reset_index(name='add_sig_count')
+    dom_counts = df.groupby('variant').size().reset_index(name='dom_sig_count')
+
+    # Merge counts into snp_stats
+    snp_stats = pd.merge(snp_stats, add_counts, on='variant', how='left').fillna(0)
+    snp_stats = pd.merge(snp_stats, dom_counts, on='variant', how='left')
+    snp_stats = pd.merge(snp_stats, all_snps[['variant', 'add_sig_total']], on='variant', how='inner')
+    snp_stats["sig_ratio"] = snp_stats["add_sig_count"] / (snp_stats["dom_sig_count"])
+
+    # Sort SNPs strictly by their median dominance ratio (The S-curve)
     snp_stats = snp_stats.sort_values('median').reset_index(drop=True)
 
-    # 4. Initialize the figure
-    fig, ax = plt.subplots(figsize=(10, 5))
+    # Initialize the multi-panel figure
+    set_style()
+    fig, (ax_A, ax_B, ax_C) = plt.subplots(
+        nrows=3, ncols=1, figsize=(10, 7), sharex=True, 
+        gridspec_kw={'height_ratios': [0.75, 2.5, 1.25]} # Middle panel stays the largest
+    )
+    colors_palette = ['#3C5488', '#E64B35', '#4DBBD5', '#00A087', '#7E818D']
+    plt.subplots_adjust(hspace=0.3)
     x_pos = np.arange(len(snp_stats))
 
-    set_style2()
 
-    # 5. Plot the variance range as vertical lines (thin and subtle)
-    bar_colors = np.where((snp_stats['min'] < 0) & (snp_stats['max'] > 0), "#A02000", '#3C5488')
+    # ==========================================
+    # PANEL A: Grouped Bar Chart for Trait Counts
+    # ==========================================
+    ratio_colors = np.where(snp_stats['sig_ratio'] >= 1, '#00A087', '#FF9F1C')
+    
+    ax_A.bar(
+        x_pos, 
+        snp_stats['sig_ratio'], 
+        width=1.0,
+        color=ratio_colors,
+        alpha=0.9,
+        zorder=2,
+        edgecolor='black', linewidth=0.1,
+    )
+    
+    ax_A.set_ylabel(r'$N_{add}  /  N_{dom}$', labelpad=10)
+    ax_A.spines['bottom'].set_visible(False)
+    ax_A.tick_params(axis='x', length=0)
+    
+    # Add panel label
+    ax_A.text(-0.06, 1.32, 'A', transform=ax_A.transAxes, fontsize=14, fontweight='bold', va='top')
 
-    ax.vlines(
-        x=x_pos, 
-        ymin=snp_stats['min'], 
-        ymax=snp_stats['max'], 
-        color=bar_colors, 
-        linewidth=1, 
-        alpha=0.5, 
-        zorder=1
+
+    # ==========================================
+    # PANEL B: Dominance Ratio Variance
+    # ==========================================
+    
+    bar_colors = np.where((snp_stats['min'] < 0) & (snp_stats['max'] > 0), "#E64B35", '#3C5488')
+
+    ax_B.vlines(
+        x=x_pos, ymin=snp_stats['min'], ymax=snp_stats['max'], 
+        color=bar_colors, linewidth=1, alpha=0.5, zorder=1
     )
 
-    # 6. Plot the median markers (solid and clean)
-    ax.scatter(
-        x=x_pos, 
-        y=snp_stats['median'], 
-        color='#3C5488', # Solid NPG Indigo
-        s=15, 
-        edgecolors='none',
-        alpha=1.0,
-        zorder=2
+    ax_B.scatter(
+        x=x_pos, y=snp_stats['median'], 
+        color='#3C5488', s=15, edgecolors='none', alpha=1.0, zorder=2
     )
 
-    # 7. Add ultra-minimalist biological reference lines
-    ax.axhline(0, color='black', linewidth=1.0, linestyle='-', zorder=0)
-    ax.axhline(1, color='#A0A0A0', linewidth=0.8, linestyle='--', zorder=0)
-    ax.axhline(-1, color='#A0A0A0', linewidth=0.8, linestyle='--', zorder=0)
+    # Reference lines
+    ax_B.axhline(0, color='black', linewidth=1.0, linestyle='-', zorder=0)
+    ax_B.axhline(1, color='#A0A0A0', linewidth=0.8, linestyle='--', zorder=0)
+    ax_B.axhline(-1, color='#A0A0A0', linewidth=0.8, linestyle='--', zorder=0)
     
-    # Clean text annotations (offset to the left to act as a secondary Y-axis guide)
-    ax.text(220, 0.05, 'Additive', color='black', fontsize=9, va='bottom', ha='right')
-    ax.text(220, 1.05, 'Dominant', color='#505050', fontsize=9, va='bottom', ha='right')
-    ax.text(220, -0.95, 'Recessive', color='#505050', fontsize=9, va='bottom', ha='right')
+    # Text annotations (dynamically placed at the end of the X-axis)
+    label_x = len(snp_stats) - 5
+    ax_B.text(label_x, 0.05, 'Additive', color='black', fontsize=9, va='bottom', ha='right')
+    ax_B.text(label_x, 1.05, 'Dominant', color='#505050', fontsize=9, va='bottom', ha='right')
+    ax_B.text(label_x, -0.95, 'Recessive', color='#505050', fontsize=9, va='bottom', ha='right')
 
-    # 8. Format Axes
-    ax.set_xticks([]) # Hide all individual SNP tick marks
-    ax.set_xlim(-2, len(snp_stats) + 2) # Add slight padding on the edges
+    # Add label
+    ax_B.text(-0.06, 1.08, 'B', transform=ax_B.transAxes, fontsize=14, fontweight='bold', va='top')
+
+    # Format Axes
+    ax_B.set_xticks([]) 
+    ax_B.set_xlim(-2, len(snp_stats) + 2) 
+    ax_B.set_ylabel(r'Dominance Ratio ($\beta_{dom} / \beta_{add}$)', labelpad=10)
+    ax_B.set_ylim(-2.2, 2.2)
+
+
+    # ==========================================
+    # PANEL C: Total Additive Traits
+    # ==========================================
     
-    ax.set_xlabel('224 Pleiotropic SNPs (Ranked by Median Dominance Ratio)', labelpad=10)
-    ax.set_ylabel(r'Dominance Ratio ($\beta_{dom} / \beta_{add}$)', labelpad=10)
-    ax.set_ylim(-2.2, 2.2)
+    ax_C.bar(
+        x_pos, snp_stats['add_sig_total'], width=0.7, color='#4DBBD5', 
+        edgecolor='black', linewidth=0.2, alpha=1.0, zorder=2, label = "Additive"
+    )
 
-    # 9. Save and show
-    plt.tight_layout()
+    ax_C.bar(
+        x_pos+0.1, snp_stats['dom_sig_count'], 
+        width=0.5, color='#E64B35', alpha=0.8, 
+        edgecolor='black', linewidth=0.2, label='Dominant', zorder=3
+    )
+    
+    ax_C.axhline(0, color='black', linewidth=1.0, zorder=1)
+    ax_C.set_ylabel('Total Trait\nCount', labelpad=10)
+    ax_C.legend(frameon=False, loc='upper left', fontsize=10)
+    ax_C.set_ylim(0, 61)
+    ax_C.set_yticks([0, 20, 40, 60])
+
+    ax_C.grid(axis='y', color='#D0D0D0', linestyle='--', linewidth=0.8, zorder=0)
+    ax_C.spines['bottom'].set_visible(False)
+    ax_C.tick_params(axis='x', length=0)
+    ax_C.text(-0.06, 1.2, 'C', transform=ax_C.transAxes, fontsize=14, fontweight='bold', va='top')
+
+    # The master X-axis formatting is now anchored to Panel C
+    ax_C.set_xlim(-2, len(snp_stats) + 2) 
+    ax_C.set_xlabel(f'{snp_stats["variant"].nunique()} Pleiotropic SNPs (Ranked by Median Dominance Ratio)', labelpad=10)
+    
+    # Save
     plt.savefig(output_filename, format='pdf', bbox_inches='tight')
+
+
+    # ==========================================
+    # Descriptive Info
+    # ==========================================
+    is_not_in_stats = ~df["variant"].isin(snp_stats["variant"])
+    unique_variants_df = df[is_not_in_stats][['variant', "phen_code"]]
+    unique_variants_df = unique_variants_df.merge(all_snps[['variant', 'rsid']], on='variant', how='inner')
+    print(unique_variants_df)
+
+    # specific dominance effect patterns among the SNPs
+    only_negative = len(snp_stats[snp_stats['max'] < 0])
+    only_positive = len(snp_stats[snp_stats['min'] > 0])
+    crosses_zero = len(snp_stats[(snp_stats['min'] < 0) & (snp_stats['max'] > 0)])
+
+    print(f"1 - SNPs with only negative dominance ratio: {only_negative}")
+    print(f"2 - SNPs with only positive dominance ratio: {only_positive}")
+    print(f"3 - SNPs with both positive and negative ratio: {crosses_zero}")
+
+    # comparisons between additive and dominant trait counts
+    equal_counts = len(snp_stats[snp_stats['add_sig_total'] == snp_stats['dom_sig_count']])
+    add_higher = len(snp_stats[snp_stats['add_sig_total'] > snp_stats['dom_sig_count']])
+    dom_higher = len(snp_stats[snp_stats['add_sig_total'] < snp_stats['dom_sig_count']])
+    print(f"4 - SNPs where Additive count EQUALS Dominance count: {equal_counts}")
+    print(f"5 - SNPs where Additive count is HIGHER than Dominance count: {add_higher}")
+    print(f"6 - SNPs where Additive count is LOWER than Dominance count: {dom_higher}")
 
 
 # ==========================================
 if __name__ == "__main__":
 
+    all_snps_df = "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/significant_SNPs/all_sig_SNPs.tsv.gz"
     coloc_snps = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/coloc_results/coloc_snps.tsv"
     out_dir="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/loci_results" 
 
     #upset_plot( coloc_snps, f"{out_dir}/vep_res.txt", out_dir)
-    #snp_info_plot(f"{out_dir}/snp_info.tsv", f"{out_dir}/snp_info.pdf")
-    plot_snp_effect(f"{out_dir}/snp_info.tsv", f"{out_dir}/snps_heatmap.pdf")
+    #snp_info_plot(f"{out_dir}/snp_info.tsv", f"{out_dir}/snp_maf.pdf")
+    plot_snp_effect(f"{out_dir}/snp_info.tsv", all_snps_df, f"{out_dir}/snps_heatmap.pdf")

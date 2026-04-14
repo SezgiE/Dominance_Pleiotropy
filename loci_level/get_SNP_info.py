@@ -58,7 +58,7 @@ if __name__ == "__main__":
             
             # Append the results to the DataFrame
             results.append({
-                "snp": snp,
+                "variant": snp,
                 "phen_code": phen_code,
                 "phen_name": trait_info[trait_info["phenotype_code"] == phen_code]["description"].values[0],
                 "category": trait_info[trait_info["phenotype_code"] == phen_code]["category"].values[0],
