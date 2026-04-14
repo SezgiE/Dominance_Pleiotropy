@@ -46,6 +46,7 @@ sig_df = pd.read_csv(
     compression="gzip",
     usecols=[
         "variant",
+        "rsid",
         "chr",
         "pos",
         "add_sig_total",
@@ -55,6 +56,7 @@ sig_df = pd.read_csv(
     ],
     dtype={
         "variant": str,
+        "rsid": str,
         "chr": str,
         "pos": int,
         "add_sig_total": int,
@@ -75,6 +77,8 @@ sig_counts = (
         dom_sig=("dom_sig_total", lambda x: (x > 0).sum()),
         dom_pleiotropy=("dom_sig_total", lambda x: (x > 1).sum()),
         multi_pleio=("is_multi", "sum"),
+        mult_var_ids=(("variant"), lambda x: ", ".join(x[merged_df["is_multi"] == True].tolist())),
+        mult_var_rsids=(("rsid"), lambda x: ", ".join(x[merged_df["is_multi"] == True].tolist()))
     )
     .reset_index()
 )

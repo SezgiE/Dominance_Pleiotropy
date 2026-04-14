@@ -15,16 +15,19 @@ def get_snp_info(snp, phen_code, sumstats_dir):
 
     sumstats = pd.read_csv(f"{sumstats_dir}/{phen_code}_sig_SNPs.tsv.bgz", sep='\t',
                            compression='gzip',
-                           usecols=["variant", "chr", "pos", 
-                                    "rsid", "dom_z_score",
-                                   "minor_AF", "N"]
+                           usecols=["variant", "chr", "pos", "rsid", 
+                                    "add_z_score", "dom_z_score", "minor_AF", "N",
+                                    "add_log10_pval", "dom_log10_pval"]
                                    )
     
-    sample_size = sumstats[sumstats["variant"] == snp]["N"].values[0]
-    dom_z = sumstats[sumstats["variant"] == snp]["dom_z_score"].values[0]
+    add_log10_pval = sumstats[sumstats["variant"] == snp]["add_log10_pval"].values[0]
+    dom_log10_pval = sumstats[sumstats["variant"] == snp]["dom_log10_pval"].values[0]
     maf = sumstats[sumstats["variant"] == snp]["minor_AF"].values[0]
+    add_z = sumstats[sumstats["variant"] == snp]["add_z_score"].values[0]
+    dom_z = sumstats[sumstats["variant"] == snp]["dom_z_score"].values[0]
+    sample_size = sumstats[sumstats["variant"] == snp]["N"].values[0]
 
-    return dom_z, maf, sample_size
+    return add_z, dom_z, maf, sample_size, add_log10_pval, dom_log10_pval
 
 
 if __name__ == "__main__":
@@ -49,8 +52,9 @@ if __name__ == "__main__":
         # Loop through each trait and get the SNP information
         for phen_code in phen_codes:
 
-            dom_z, maf, sample_size = get_snp_info(snp, phen_code, sumstats_dir)
-            std_b = std_beta(dom_z, maf, sample_size)
+            add_z, dom_z, maf, sample_size, add_log10_pval, dom_log10_pval = get_snp_info(snp, phen_code, sumstats_dir)
+            std_add_b = std_beta(add_z, maf, sample_size)
+            std_dom_b = std_beta(dom_z, maf, sample_size)
             
             # Append the results to the DataFrame
             results.append({
@@ -58,10 +62,14 @@ if __name__ == "__main__":
                 "phen_code": phen_code,
                 "phen_name": trait_info[trait_info["phenotype_code"] == phen_code]["description"].values[0],
                 "category": trait_info[trait_info["phenotype_code"] == phen_code]["category"].values[0],
-                "dom_z": dom_z,
                 "maf": maf,
+                "add_z": add_z,
+                "add_log10_pval": add_log10_pval,
+                "dom_z": dom_z,
+                "dom_log10_pval": dom_log10_pval,
                 "sample_size": sample_size,
-                "std_b": std_b
+                "std_add_b": std_add_b,
+                "std_dom_b": std_dom_b
             })
 
 

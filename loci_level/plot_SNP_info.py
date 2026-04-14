@@ -190,8 +190,8 @@ def snp_info_plot(result_df_path, output_path):
     
     # Data Prep
     result_df = pd.read_csv(result_df_path, sep='\t')
-    result_df["std_b_sq"] = result_df["std_b"] ** 2 
-    result_df = result_df.sort_values(by=["category", "std_b_sq"], ascending=[True, True])
+    result_df["std_dom_Bsq"] = result_df["std_dom_b"] ** 2 
+    result_df = result_df.sort_values(by=["category", "std_dom_Bsq"], ascending=[True, True])
     
     categories = result_df["category"].unique()
     cat_mapping = {cat: i for i, cat in enumerate(categories)}
@@ -222,11 +222,11 @@ def snp_info_plot(result_df_path, output_path):
 
     # --- PANEL B: Effect Size Distribution ---
     ax2 = fig.add_subplot(gs[1, 0])
-    clipped_data = result_df["std_b_sq"].clip(upper=0.01)
+    clipped_data = result_df["std_dom_Bsq"].clip(upper=0.01)
     weights2 = np.ones_like(clipped_data) / len(clipped_data)
     ax2.hist(clipped_data, bins=30, weights=weights2, color="#7fcdbb", edgecolor='black', alpha=0.7)
     
-    beta_median = result_df["std_b_sq"].median()
+    beta_median = result_df["std_dom_Bsq"].median()
     ax2.axvline(beta_median, color='red', linestyle='--', linewidth=1)
     ax2.text(beta_median + 0.0002, ax2.get_ylim()[1]*0.8, f'Median: {beta_median:.4f}', color='red', fontsize=9)
     
@@ -249,7 +249,7 @@ def snp_info_plot(result_df_path, output_path):
     # Scatter plot
     scatter = ax.scatter(result_df["maf"], 
                          result_df["cat_num"], 
-                         result_df["std_b_sq"], 
+                         result_df["std_dom_Bsq"], 
                          c=result_df["cat_num"], 
                          cmap='tab10', 
                          s=55, 
@@ -260,7 +260,7 @@ def snp_info_plot(result_df_path, output_path):
     # Drop lines to floor
     norm = plt.Normalize(vmin=result_df["cat_num"].min(), vmax=result_df["cat_num"].max())
     cmap = plt.get_cmap('tab10')
-    for x, y, z, c_idx in zip(result_df["maf"], result_df["cat_num"], result_df["std_b_sq"], result_df["cat_num"]):
+    for x, y, z, c_idx in zip(result_df["maf"], result_df["cat_num"], result_df["std_dom_Bsq"], result_df["cat_num"]):
         # Pass the normalized index to the cmap to lock the colors together
         ax.plot([x, x], [y, y], [0, z], color=cmap(norm(c_idx)), alpha=0.6, linewidth=1.5)
 
@@ -289,6 +289,83 @@ def snp_info_plot(result_df_path, output_path):
     plt.savefig(output_path, dpi=600, bbox_inches='tight', format='pdf')
 
 
+def plot_snp_effect(df, output_filename):
+    """
+    Generates a ranked variance range plot showing the spread of 
+    dominance ratios for each SNP across multiple phenotypes.
+    """
+    pval = np.log10(5e-8)
+    df = pd.read_csv(df, sep='\t')
+
+    # Dominance Ratio
+    df_valid = df[df['add_log10_pval'] > pval].copy()
+    df_valid['dom_ratio'] = df_valid['std_dom_b'] / df_valid['std_add_b']
+
+    
+    # Clip extremes to keep the plot scale readable (focusing on the biological range)
+    df_valid['dom_ratio_clipped'] = df_valid['dom_ratio'].clip(lower=-2, upper=2)
+
+    # 2. Aggregate data per SNP: get min, max, and median
+    snp_stats = df_valid.groupby('snp')['dom_ratio_clipped'].agg(
+        ['min', 'max', 'median']
+    ).reset_index()
+
+    # 3. Sort SNPs strictly by their median dominance ratio (Creates the S-curve)
+    snp_stats = snp_stats.sort_values('median').reset_index(drop=True)
+
+    # 4. Initialize the figure
+    fig, ax = plt.subplots(figsize=(10, 5))
+    x_pos = np.arange(len(snp_stats))
+
+    set_style2()
+
+    # 5. Plot the variance range as vertical lines (thin and subtle)
+    bar_colors = np.where((snp_stats['min'] < 0) & (snp_stats['max'] > 0), "#A02000", '#3C5488')
+
+    ax.vlines(
+        x=x_pos, 
+        ymin=snp_stats['min'], 
+        ymax=snp_stats['max'], 
+        color=bar_colors, 
+        linewidth=1, 
+        alpha=0.5, 
+        zorder=1
+    )
+
+    # 6. Plot the median markers (solid and clean)
+    ax.scatter(
+        x=x_pos, 
+        y=snp_stats['median'], 
+        color='#3C5488', # Solid NPG Indigo
+        s=15, 
+        edgecolors='none',
+        alpha=1.0,
+        zorder=2
+    )
+
+    # 7. Add ultra-minimalist biological reference lines
+    ax.axhline(0, color='black', linewidth=1.0, linestyle='-', zorder=0)
+    ax.axhline(1, color='#A0A0A0', linewidth=0.8, linestyle='--', zorder=0)
+    ax.axhline(-1, color='#A0A0A0', linewidth=0.8, linestyle='--', zorder=0)
+    
+    # Clean text annotations (offset to the left to act as a secondary Y-axis guide)
+    ax.text(220, 0.05, 'Additive', color='black', fontsize=9, va='bottom', ha='right')
+    ax.text(220, 1.05, 'Dominant', color='#505050', fontsize=9, va='bottom', ha='right')
+    ax.text(220, -0.95, 'Recessive', color='#505050', fontsize=9, va='bottom', ha='right')
+
+    # 8. Format Axes
+    ax.set_xticks([]) # Hide all individual SNP tick marks
+    ax.set_xlim(-2, len(snp_stats) + 2) # Add slight padding on the edges
+    
+    ax.set_xlabel('224 Pleiotropic SNPs (Ranked by Median Dominance Ratio)', labelpad=10)
+    ax.set_ylabel(r'Dominance Ratio ($\beta_{dom} / \beta_{add}$)', labelpad=10)
+    ax.set_ylim(-2.2, 2.2)
+
+    # 9. Save and show
+    plt.tight_layout()
+    plt.savefig(output_filename, format='pdf', bbox_inches='tight')
+
+
 # ==========================================
 if __name__ == "__main__":
 
@@ -296,4 +373,5 @@ if __name__ == "__main__":
     out_dir="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/loci_results" 
 
     #upset_plot( coloc_snps, f"{out_dir}/vep_res.txt", out_dir)
-    snp_info_plot(f"{out_dir}/snp_info.tsv", f"{out_dir}/snp_info.pdf")
+    #snp_info_plot(f"{out_dir}/snp_info.tsv", f"{out_dir}/snp_info.pdf")
+    plot_snp_effect(f"{out_dir}/snp_info.tsv", f"{out_dir}/snps_heatmap.pdf")
