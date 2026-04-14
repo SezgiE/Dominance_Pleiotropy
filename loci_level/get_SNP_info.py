@@ -1,5 +1,6 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
+from scipy.stats import norm
 
 
 def std_beta(dom_z, maf, n):
@@ -7,27 +8,44 @@ def std_beta(dom_z, maf, n):
     """Standardizes the z value based on MAF and sample size"""
 
     std_b = dom_z / np.sqrt(2 * maf * (1 - maf) * (n + dom_z**2))
+    se = 1 / np.sqrt(2 * maf * (1 - maf) * (n + dom_z**2))
     
-    return std_b
+    return std_b, se
 
 
 def get_snp_info(snp, phen_code, sumstats_dir):
 
-    sumstats = pd.read_csv(f"{sumstats_dir}/{phen_code}_sig_SNPs.tsv.bgz", sep='\t',
-                           compression='gzip',
-                           usecols=["variant", "chr", "pos", "rsid", 
-                                    "add_z_score", "dom_z_score", "minor_AF", "N",
-                                    "add_log10_pval", "dom_log10_pval"]
-                                   )
+    cols = [
+        "variant", "minor_AF", "N", "chr", "rsid", "pos",
+        "add_z_score", "dom_z_score", "add_log10_pval", "dom_log10_pval"
+    ]
     
-    add_log10_pval = sumstats[sumstats["variant"] == snp]["add_log10_pval"].values[0]
-    dom_log10_pval = sumstats[sumstats["variant"] == snp]["dom_log10_pval"].values[0]
-    maf = sumstats[sumstats["variant"] == snp]["minor_AF"].values[0]
-    add_z = sumstats[sumstats["variant"] == snp]["add_z_score"].values[0]
-    dom_z = sumstats[sumstats["variant"] == snp]["dom_z_score"].values[0]
-    sample_size = sumstats[sumstats["variant"] == snp]["N"].values[0]
+    sumstats = pd.read_csv(
+        f"{sumstats_dir}/{phen_code}_sig_SNPs.tsv.bgz", 
+        sep='\t',
+        compression='gzip',
+        usecols=cols
+    )
+    
+    snp_row = sumstats[sumstats["variant"] == snp].iloc[0]
+    
+    # Split the snp string once
+    snp_parts = snp.split(":")
 
-    return add_z, dom_z, maf, sample_size, add_log10_pval, dom_log10_pval
+    return {
+        "variant": snp,
+        "rsID": snp_row["rsid"],
+        "chr": snp_row["chr"],
+        "pos": snp_row["pos"],
+        "A1": snp_parts[3],
+        "A2": snp_parts[2],
+        "maf": snp_row["minor_AF"],
+        "sample_size": snp_row["N"],
+        "add_z": snp_row["add_z_score"],
+        "dom_z": snp_row["dom_z_score"],
+        "add_log10_pval": snp_row["add_log10_pval"],
+        "dom_log10_pval": snp_row["dom_log10_pval"]
+    }
 
 
 if __name__ == "__main__":
@@ -52,26 +70,50 @@ if __name__ == "__main__":
         # Loop through each trait and get the SNP information
         for phen_code in phen_codes:
 
-            add_z, dom_z, maf, sample_size, add_log10_pval, dom_log10_pval = get_snp_info(snp, phen_code, sumstats_dir)
-            std_add_b = std_beta(add_z, maf, sample_size)
-            std_dom_b = std_beta(dom_z, maf, sample_size)
-            
+            snp_info = get_snp_info(snp, phen_code, sumstats_dir)
+            std_add_b, std_add_se = std_beta(snp_info["add_z"], snp_info["maf"], snp_info["sample_size"])
+            std_dom_b, std_dom_se = std_beta(snp_info["dom_z"], snp_info["maf"], snp_info["sample_size"])
+
             # Append the results to the DataFrame
             results.append({
-                "variant": snp,
                 "phen_code": phen_code,
-                "phen_name": trait_info[trait_info["phenotype_code"] == phen_code]["description"].values[0],
-                "category": trait_info[trait_info["phenotype_code"] == phen_code]["category"].values[0],
-                "maf": maf,
-                "add_z": add_z,
-                "add_log10_pval": add_log10_pval,
-                "dom_z": dom_z,
-                "dom_log10_pval": dom_log10_pval,
-                "sample_size": sample_size,
+                "phen_name": trait_info[trait_info["phenotype_code"] == phen_code]["description"].iloc[0],
+                "category": trait_info[trait_info["phenotype_code"] == phen_code]["category"].iloc[0],
+                "variant": snp_info["variant"],
+                "rsID": snp_info["rsID"],
+                "CHR": snp_info["chr"],
+                "BP": snp_info["pos"],
+                "A1": snp_info["A1"],
+                "A2": snp_info["A2"],
+                "maf": snp_info["maf"],
+                "sample_size": snp_info["sample_size"],
+                "add_z": snp_info["add_z"],
+                "dom_z": snp_info["dom_z"],
+                "add_log10_pval": snp_info["add_log10_pval"],
+                "dom_log10_pval": snp_info["dom_log10_pval"],
                 "std_add_b": std_add_b,
-                "std_dom_b": std_dom_b
+                "std_add_se": std_add_se,
+                "std_dom_b": std_dom_b,
+                "std_dom_se": std_dom_se
             })
 
 
+    # Save the results to a TSV file
     result_df = pd.DataFrame(results)        
-    result_df.to_csv("/Users/sezgi/Documents/dominance_pleiotropy/loci_level/loci_results/snp_info.tsv", sep='\t', index=False)
+    result_df.to_csv("/Users/sezgi/Documents/dominance_pleiotropy/loci_level/coloc_results/coloc_snp_info.tsv", sep='\t', index=False)
+
+
+    # FUMA input file
+    result_df = result_df.sort_values('dom_log10_pval', ascending=False).drop_duplicates(subset=['variant'], keep='first').copy()
+    result_df["P"] = 2 * norm.sf(np.abs(result_df['std_dom_b'] / result_df['std_dom_se']))
+
+    fuma_df = result_df[["rsID", "CHR", "BP", "A1", "A2", "P", "std_dom_b", "std_dom_se"]].copy()
+    fuma_df = fuma_df.rename(columns={'std_dom_b': 'Beta', 'std_dom_se': 'SE'})
+
+    fuma_independent_snps = fuma_df[["rsID", "CHR", "BP"]].copy()
+
+    # Save the files
+    fuma_path = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/fuma_input"
+    fuma_df.to_csv(f'{fuma_path}/fuma_input.txt', sep='\t', index=False, encoding='ascii')
+    fuma_independent_snps.to_csv(f'{fuma_path}/fuma_indp_snps.txt', sep='\t', index=False, encoding='ascii')
+

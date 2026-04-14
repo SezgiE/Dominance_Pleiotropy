@@ -198,7 +198,7 @@ def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset
     print(f"[*] Success! Pleiotropy UpSet plot saved to: {out_path}")
 
 
-def snp_info_plot(result_df_path, output_path):
+def snp_3D_plot(result_df_path, output_path):
     
     # Data Prep
     result_df = pd.read_csv(result_df_path, sep='\t')
@@ -301,7 +301,7 @@ def snp_info_plot(result_df_path, output_path):
     plt.savefig(output_path, dpi=600, bbox_inches='tight', format='pdf')
 
 
-def plot_snp_effect(df_path, all_snps_df, output_filename):
+def plot_effect_direction(df_path, all_snps_df, output_filename):
     """
     Generates a 2-panel figure: 
     Panel A: Grouped bar chart showing count of significant Additive vs Dominant traits per SNP.
@@ -369,7 +369,7 @@ def plot_snp_effect(df_path, all_snps_df, output_filename):
     ax_A.tick_params(axis='x', length=0)
     
     # Add panel label
-    ax_A.text(-0.06, 1.32, 'A', transform=ax_A.transAxes, fontsize=14, fontweight='bold', va='top')
+    ax_A.text(-0.1, 1.32, 'A', transform=ax_A.transAxes, fontsize=14, fontweight='bold', va='top')
 
 
     # ==========================================
@@ -400,7 +400,7 @@ def plot_snp_effect(df_path, all_snps_df, output_filename):
     ax_B.text(label_x, -0.95, 'Recessive', color='#505050', fontsize=9, va='bottom', ha='right')
 
     # Add label
-    ax_B.text(-0.06, 1.08, 'B', transform=ax_B.transAxes, fontsize=14, fontweight='bold', va='top')
+    ax_B.text(-0.1, 1.08, 'B', transform=ax_B.transAxes, fontsize=14, fontweight='bold', va='top')
 
     # Format Axes
     ax_B.set_xticks([]) 
@@ -433,7 +433,7 @@ def plot_snp_effect(df_path, all_snps_df, output_filename):
     ax_C.grid(axis='y', color='#D0D0D0', linestyle='--', linewidth=0.8, zorder=0)
     ax_C.spines['bottom'].set_visible(False)
     ax_C.tick_params(axis='x', length=0)
-    ax_C.text(-0.06, 1.2, 'C', transform=ax_C.transAxes, fontsize=14, fontweight='bold', va='top')
+    ax_C.text(-0.1, 1.2, 'C', transform=ax_C.transAxes, fontsize=14, fontweight='bold', va='top')
 
     # The master X-axis formatting is now anchored to Panel C
     ax_C.set_xlim(-2, len(snp_stats) + 2) 
@@ -455,10 +455,14 @@ def plot_snp_effect(df_path, all_snps_df, output_filename):
     only_negative = len(snp_stats[snp_stats['max'] < 0])
     only_positive = len(snp_stats[snp_stats['min'] > 0])
     crosses_zero = len(snp_stats[(snp_stats['min'] < 0) & (snp_stats['max'] > 0)])
-
     print(f"1 - SNPs with only negative dominance ratio: {only_negative}")
     print(f"2 - SNPs with only positive dominance ratio: {only_positive}")
     print(f"3 - SNPs with both positive and negative ratio: {crosses_zero}")
+    print("Crossed zero:")
+    zero_snps = snp_stats[(snp_stats['min'] < 0) & (snp_stats['max'] > 0)]
+    zero_snps = zero_snps.merge(all_snps[['variant', 'rsid']], on='variant', how='inner')
+    for row in zero_snps.itertuples():
+        print(f" - {row.variant} ({row.rsid})")
 
     # comparisons between additive and dominant trait counts
     equal_counts = len(snp_stats[snp_stats['add_sig_total'] == snp_stats['dom_sig_count']])
@@ -474,8 +478,9 @@ if __name__ == "__main__":
 
     all_snps_df = "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/significant_SNPs/all_sig_SNPs.tsv.gz"
     coloc_snps = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/coloc_results/coloc_snps.tsv"
+    coloc_snps_info = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/coloc_results/coloc_snp_info.tsv"
     out_dir="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/loci_results" 
 
     #upset_plot( coloc_snps, f"{out_dir}/vep_res.txt", out_dir)
-    #snp_info_plot(f"{out_dir}/snp_info.tsv", f"{out_dir}/snp_maf.pdf")
-    plot_snp_effect(f"{out_dir}/snp_info.tsv", all_snps_df, f"{out_dir}/snps_heatmap.pdf")
+    #snp_3D_plot(f"{out_dir}/snp_info.tsv", f"{out_dir}/snp_maf.pdf")
+    plot_effect_direction(coloc_snps_info, all_snps_df, f"{out_dir}/snps_effect_direction.pdf")
