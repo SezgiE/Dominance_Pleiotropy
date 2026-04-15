@@ -49,19 +49,34 @@ def set_style3():
     plt.rcParams['pdf.fonttype'] = 42
 
 
-def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset.png"):
-    """
-    Loads raw Coloc and VEP files, merges them, and generates an UpSet plot 
-    visualizing pleiotropic variant sharing among traits.
+def format_consequence(name):
+        c = str(name).strip().replace('_', ' ').capitalize()
+        return c.replace('utr', 'UTR').replace('Utr', 'UTR')
 
-    Parameters:
-    - coloc_filepath (str): Path to the coloc summary TSV file.
-    - vep_filepath (str): Path to the cleaned VEP results TXT/TSV file.
-    - out_dir (str): Directory where the plot will be saved.
-    - filename (str): Name of the output image file.
-    """
+
+def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset.png"):
+
     print("[*] Loading and merging datasets...")
+
+    severity_order = [
+        'stop_gained',
+        'missense_variant',
+        'splice_polypyrimidine_tract_variant',
+        '5_prime_UTR_variant',
+        '3_prime_UTR_variant',
+        'synonymous_variant',
+        'NMD_transcript_variant',
+        'intron_variant',
+        'non_coding_transcript_exon_variant',
+        'non_coding_transcript_variant',
+        'upstream_gene_variant',
+        'downstream_gene_variant',
+        'regulatory_region_variant',
+        'intergenic_variant'
+    ]
+    severity_map = {consq: i for i, consq in enumerate(severity_order)}
     
+
     # --- Load and Clean Data ---
     coloc_df = pd.read_csv(coloc_filepath, sep='\t') 
     
@@ -93,11 +108,21 @@ def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset
     # --- Prepare Data for UpSet Plot ---
     print("[*] Preparing data matrix for UpSet plot...")
     
+    merged_df['temp_severity'] = merged_df['Consequence'].apply(
+        lambda x: severity_map.get(str(x).split(',')[0].strip(), 999) # 999 is a fallback for unknown consequences
+    )
+
+    sorted_for_upset = merged_df.sort_values(
+            by=['Variant_ID', 'CANONICAL', 'temp_severity'], 
+            ascending=[True, False, True]
+        )
+
     # Get unique variants, their associated traits and consequences
     unique_vars_df = merged_df[['Variant_ID']].drop_duplicates()
     var_traits_map = merged_df.groupby('Variant_ID')['categories'].first().to_dict()
-    var_consq_map = merged_df.groupby('Variant_ID')['Consequence'].first().fillna('unknown').apply(lambda x: str(x).split(',')[0]).to_dict()
-    
+    var_consq_map = sorted_for_upset.groupby('Variant_ID')['Consequence'].first().fillna('unknown').apply(lambda x: str(x).split(',')[0]).to_dict()
+
+
     # Extract all unique traits across the entire dataset to build the matrix columns
     all_traits = set()
     for traits_list in merged_df['categories']:
@@ -110,8 +135,7 @@ def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset
         traits_list = var_traits_map.get(variant_id, [])
 
         raw_consq = var_consq_map.get(variant_id, 'Unknown')
-        clean_consq = str(raw_consq).replace('_', ' ').capitalize()
-        clean_consq = clean_consq.replace('utr', 'UTR').replace('Utr', 'UTR')
+        clean_consq = format_consequence(raw_consq)
         
         # Consequence into the row data
         indicator_row = {
@@ -131,11 +155,13 @@ def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset
     print("[*] Generating UpSet plot...")
     os.makedirs(out_dir, exist_ok=True)
 
-    # Define plot size
-    set_style()
-    fig_size = (15, 8) 
+    # UPDATED: Define plot size with increased height for both panels
+    set_style2()
+    fig_size = (18, 9.5) 
     fig = plt.figure(figsize=fig_size)
     
+    # NEW: Split the figure into Top (UpSet) and Bottom (Histogram)
+    subfigs = fig.subfigures(2, 1, height_ratios=[3, 1], hspace=0)
 
     # Initialize UpSet
     upset = us.UpSet(
@@ -149,8 +175,15 @@ def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset
     )
 
     upset.add_stacked_bars(by='Consequence', colors='tab20', title="Variant Count", elements=4)
-    axes_dict = upset.plot(fig=fig)
+    
+    # UPDATED: Pass ONLY the top subfigure to the upset plot
+    axes_dict = upset.plot(fig=subfigs[0])
 
+    # NEW: Add 'a' label for Nature Genetics
+    subfigs[0].text(0.1, 0.95, 'A', fontsize=14, fontweight='bold', family='Arial')
+    
+    consequence_colors = {'Non coding transcript exon variant': "#b0a234",
+        'Non coding transcript variant': "#1697a0"}
 
     # Legend setup for the stacked bars
     for ax_name, ax in axes_dict.items():
@@ -162,13 +195,24 @@ def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset
                 sorted_pairs = sorted(zip(handles, labels), key=lambda x: x[1])
                 handles, labels = zip(*sorted_pairs)
 
+                for handle, label in zip(handles, labels):
+                    # If it is a BarContainer, grab the color from its first child patch
+                    if hasattr(handle, 'patches') and len(handle.patches) > 0:
+                        consequence_colors[label] = handle.patches[0].get_facecolor()
+                    # If it is a standard patch, get it directly
+                    elif hasattr(handle, 'get_facecolor'):
+                        consequence_colors[label] = handle.get_facecolor()
+                    else:
+                        # Fallback in case of an unknown legend type
+                        consequence_colors[label] = '#bdc3c7'
+
                 ax.legend(
                     handles, 
                     labels, 
                     loc='upper left', 
-                    bbox_to_anchor=(-0.4, 1.15), 
+                    bbox_to_anchor=(-0.37, 1.3), 
                     fontsize=8,
-                    labelspacing=0.6,   
+                    labelspacing=0.5,   
                     frameon=True,
                     title="Variant Consequences",
                 )
@@ -186,13 +230,34 @@ def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset
                             fontsize=8, fontweight='bold')
 
 
-    # Add titles and labels to the current active figure
-    plt.suptitle('Pleiotropic Variants across Trait Categories', y=0.95, fontsize=14, fontweight='bold',
-                 ha='center', family='sans-serif')
+    # NEW: --- PANEL B: Histogram of SNPs per Consequence ---
+    ax_hist = subfigs[1].subplots()
+    subfigs[1].text(0.1, 0.98, 'B', fontsize=14, fontweight='bold', family='Arial')
+    
+    canonical_rows = sorted_for_upset.groupby('Variant_ID')['Consequence'].first().fillna('unknown')
+    # canonical_lists = canonical_rows.apply(lambda x: str(x).split(','))
+    # exploded_consq = canonical_lists.explode()
+    exploded_consq = canonical_rows.apply(lambda x: str(x).split(',')[0].strip())
+    cleaned_consq = exploded_consq.apply(format_consequence)
+    canonical_consq_counts = cleaned_consq.value_counts().sort_index()
+    
+    # 6. Count instances and sort alphabetically
+    bar_colors = [consequence_colors.get(consequence, '#bdc3c7') for consequence in canonical_consq_counts.index]
+    
+    # Plot the histogram
+    bars = ax_hist.bar(canonical_consq_counts.index, canonical_consq_counts.values, 
+                       color=bar_colors, edgecolor='black', linewidth=0.5)
+    
+    # Style Panel B for publication
+    ax_hist.set_ylabel('Total Consequences (N)', family='Arial', fontsize=12)
+    ax_hist.tick_params(axis='x', rotation=30, labelsize=10)
+    ax_hist.tick_params(axis='y', labelsize=8)
+    ax_hist.spines['top'].set_visible(False)
+    ax_hist.spines['right'].set_visible(False)
     
     # Save plot with tight bbox to prevent cutoff of trait names
     out_path = os.path.join(out_dir, filename)
-    plt.savefig(out_path, bbox_inches='tight', dpi=600) # Added 300 dpi for publication quality
+    plt.savefig(out_path, bbox_inches='tight', dpi=600) 
     plt.close(fig) 
     
     print(f"[*] Success! Pleiotropy UpSet plot saved to: {out_path}")
@@ -481,6 +546,6 @@ if __name__ == "__main__":
     coloc_snps_info = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/coloc_results/coloc_snp_info.tsv"
     out_dir="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/loci_results" 
 
-    #upset_plot( coloc_snps, f"{out_dir}/vep_res.txt", out_dir)
+    upset_plot( coloc_snps, f"{out_dir}/vep_res.txt", out_dir)
     #snp_3D_plot(f"{out_dir}/snp_info.tsv", f"{out_dir}/snp_maf.pdf")
-    plot_effect_direction(coloc_snps_info, all_snps_df, f"{out_dir}/snps_effect_direction.pdf")
+    #plot_effect_direction(coloc_snps_info, all_snps_df, f"{out_dir}/snps_effect_direction.pdf")

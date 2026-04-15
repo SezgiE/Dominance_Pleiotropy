@@ -240,6 +240,7 @@ def compile_coloc_results(out_dir, phen_code_to_name, category_map,
     # Summarize the number of traits, categories, and list of phenotypes for each unique SNP
     snp_info = high_conf_df.groupby('variant').apply(
         lambda g: pd.Series({
+            "locus": g['locus1'].iloc[0],
             'n_traits': len(set(g['phen1']).union(set(g['phen2']))),
             'n_categories': len(set(g['cat1'].dropna()).union(set(g['cat2'].dropna()))),
             'phenotypes': ', '.join(set(g['phen_name1'].dropna()).union(set(g['phen_name2'].dropna()))),
