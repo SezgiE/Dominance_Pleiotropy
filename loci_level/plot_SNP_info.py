@@ -54,7 +54,7 @@ def format_consequence(name):
         return c.replace('utr', 'UTR').replace('Utr', 'UTR')
 
 
-def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset.png"):
+def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset.pdf"):
 
     print("[*] Loading and merging datasets...")
 
@@ -180,7 +180,7 @@ def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset
     axes_dict = upset.plot(fig=subfigs[0])
 
     # NEW: Add 'a' label for Nature Genetics
-    subfigs[0].text(0.1, 0.95, 'A', fontsize=14, fontweight='bold', family='Arial')
+    subfigs[0].text(0.1, 0.95, 'A.', fontsize=14, fontweight='bold', family='Arial')
     
     consequence_colors = {'Non coding transcript exon variant': "#b0a234",
         'Non coding transcript variant': "#1697a0"}
@@ -232,7 +232,7 @@ def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset
 
     # NEW: --- PANEL B: Histogram of SNPs per Consequence ---
     ax_hist = subfigs[1].subplots()
-    subfigs[1].text(0.1, 0.98, 'B', fontsize=14, fontweight='bold', family='Arial')
+    subfigs[1].text(0.1, 0.98, 'B.', fontsize=14, fontweight='bold', family='Arial')
     
     canonical_rows = sorted_for_upset.groupby('Variant_ID')['Consequence'].first().fillna('unknown')
     # canonical_lists = canonical_rows.apply(lambda x: str(x).split(','))
@@ -294,7 +294,7 @@ def snp_3D_plot(result_df_path, output_path):
     ax1.set_yticks([0, 0.1, 0.2, 0.3])
     ax1.set_xlabel('MAF')
     ax1.set_ylabel('Proportion of Variants')
-    ax1.text(-0.12, 1.1, 'A', transform=ax1.transAxes, fontsize=16, fontweight='bold', va='top')
+    ax1.text(-0.12, 1.1, 'A.', transform=ax1.transAxes, fontsize=16, fontweight='bold', va='top')
 
 
     # --- PANEL B: Effect Size Distribution ---
@@ -314,7 +314,7 @@ def snp_3D_plot(result_df_path, output_path):
     ax2.set_xticklabels(['0', '0.002', '0.004', '0.006', '0.008', '>0.01'])
     ax2.set_xlabel('Squared Std. Effect Size (\u03B2\u00B2)')
     ax2.set_ylabel('Proportion of Variants')
-    ax2.text(-0.12, 1.1, 'B', transform=ax2.transAxes, fontsize=16, fontweight='bold', va='top')
+    ax2.text(-0.12, 1.1, 'B.', transform=ax2.transAxes, fontsize=16, fontweight='bold', va='top')
 
 
     # --- PANEL C: 3D Visualization ---
@@ -353,7 +353,7 @@ def snp_3D_plot(result_df_path, output_path):
     ax.view_init(elev=20, azim=38)
     
     # Panel C Label
-    ax.text2D(-0.05, 1.042, 'C', transform=ax.transAxes, fontsize=16, fontweight='bold', va='top')
+    ax.text2D(-0.05, 1.042, 'C.', transform=ax.transAxes, fontsize=16, fontweight='bold', va='top')
 
     # Legend with wrapping
     legend = ax.legend(*scatter.legend_elements(), title="Trait Categories", 
@@ -434,7 +434,7 @@ def plot_effect_direction(df_path, all_snps_df, output_filename):
     ax_A.tick_params(axis='x', length=0)
     
     # Add panel label
-    ax_A.text(-0.1, 1.32, 'A', transform=ax_A.transAxes, fontsize=14, fontweight='bold', va='top')
+    ax_A.text(-0.1, 1.32, 'A.', transform=ax_A.transAxes, fontsize=14, fontweight='bold', va='top')
 
 
     # ==========================================
@@ -461,11 +461,11 @@ def plot_effect_direction(df_path, all_snps_df, output_filename):
     # Text annotations (dynamically placed at the end of the X-axis)
     label_x = len(snp_stats) - 5
     ax_B.text(label_x, 0.05, 'Additive', color='black', fontsize=9, va='bottom', ha='right')
-    ax_B.text(label_x, 1.05, 'Dominant', color='#505050', fontsize=9, va='bottom', ha='right')
-    ax_B.text(label_x, -0.95, 'Recessive', color='#505050', fontsize=9, va='bottom', ha='right')
+    ax_B.text(label_x, 1.05, 'Complete Dominance', color='#505050', fontsize=9, va='bottom', ha='right')
+    ax_B.text(label_x, -0.95, 'Complete Recessiveness', color='#505050', fontsize=9, va='bottom', ha='right')
 
     # Add label
-    ax_B.text(-0.1, 1.08, 'B', transform=ax_B.transAxes, fontsize=14, fontweight='bold', va='top')
+    ax_B.text(-0.1, 1.08, 'B.', transform=ax_B.transAxes, fontsize=14, fontweight='bold', va='top')
 
     # Format Axes
     ax_B.set_xticks([]) 
@@ -498,7 +498,7 @@ def plot_effect_direction(df_path, all_snps_df, output_filename):
     ax_C.grid(axis='y', color='#D0D0D0', linestyle='--', linewidth=0.8, zorder=0)
     ax_C.spines['bottom'].set_visible(False)
     ax_C.tick_params(axis='x', length=0)
-    ax_C.text(-0.1, 1.2, 'C', transform=ax_C.transAxes, fontsize=14, fontweight='bold', va='top')
+    ax_C.text(-0.1, 1.2, 'C.', transform=ax_C.transAxes, fontsize=14, fontweight='bold', va='top')
 
     # The master X-axis formatting is now anchored to Panel C
     ax_C.set_xlim(-2, len(snp_stats) + 2) 
@@ -546,6 +546,6 @@ if __name__ == "__main__":
     coloc_snps_info = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/coloc_results/coloc_snp_info.tsv"
     out_dir="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/loci_results" 
 
-    upset_plot( coloc_snps, f"{out_dir}/vep_res.txt", out_dir)
-    #snp_3D_plot(f"{out_dir}/snp_info.tsv", f"{out_dir}/snp_maf.pdf")
-    #plot_effect_direction(coloc_snps_info, all_snps_df, f"{out_dir}/snps_effect_direction.pdf")
+    upset_plot(coloc_snps, f"{out_dir}/vep_res.txt", out_dir)
+    snp_3D_plot(coloc_snps_info, f"{out_dir}/snp_maf.pdf")
+    plot_effect_direction(coloc_snps_info, all_snps_df, f"{out_dir}/snps_effect_direction.pdf")

@@ -112,8 +112,15 @@ if __name__ == "__main__":
 
     fuma_independent_snps = fuma_df[["rsID", "CHR", "BP"]].copy()
 
-    # Save the files
     fuma_path = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/fuma_input"
     fuma_df.to_csv(f'{fuma_path}/fuma_input.txt', sep='\t', index=False, encoding='ascii')
     fuma_independent_snps.to_csv(f'{fuma_path}/fuma_indp_snps.txt', sep='\t', index=False, encoding='ascii')
 
+
+    # Create a 0-based BED file for UCSC liftOver
+    bed_df = result_df[['CHR', 'BP', 'variant']].copy()
+    bed_df['CHR'] = bed_df['CHR'].astype(str).apply(lambda x: x if x.startswith('chr') else f'chr{x}')
+    bed_df['start'] = bed_df['BP'].astype(int) - 1
+    bed_df['end'] = bed_df['BP'].astype(int)
+    
+    bed_df[['CHR', 'start', 'end', 'variant']].to_csv(f'/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/liftover_input.bed', sep='\t', index=False, header=False)
