@@ -101,7 +101,22 @@ if __name__ == "__main__":
     # Save the results to a TSV file
     result_df = pd.DataFrame(results)        
     result_df.to_csv("/Users/sezgi/Documents/dominance_pleiotropy/loci_level/coloc_results/coloc_snp_info.tsv", sep='\t', index=False)
+    
 
+    # Multi Category variants for UCSC liftOver
+    multi_category_variants = result_df.groupby("variant")["category"].nunique()
+    mult_pleoi_df = result_df[result_df["variant"].isin(multi_category_variants[multi_category_variants >= 2].index)]
+    
+    mult_pleoi_df = mult_pleoi_df.sort_values('dom_log10_pval', ascending=False).drop_duplicates(subset=['variant'], keep='first').copy()
+    mult_pleoi_df["P"] = 2 * norm.sf(np.abs(mult_pleoi_df['std_dom_b'] / mult_pleoi_df['std_dom_se']))
+
+    bed_df_mult = mult_pleoi_df[['CHR', 'BP', 'variant']].copy()
+    bed_df_mult['CHR'] = bed_df_mult['CHR'].astype(str).apply(lambda x: x if x.startswith('chr') else f'chr{x}')
+    bed_df_mult['start'] = bed_df_mult['BP'].astype(int) - 1
+    bed_df_mult['end'] = bed_df_mult['BP'].astype(int)
+    
+    bed_df_mult[['CHR', 'start', 'end', 'variant']].to_csv(f'/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/b37_to_b38/liftover_input_mult.bed', sep='\t', index=False, header=False)
+    
 
     # FUMA input file
     result_df = result_df.sort_values('dom_log10_pval', ascending=False).drop_duplicates(subset=['variant'], keep='first').copy()
@@ -112,15 +127,14 @@ if __name__ == "__main__":
 
     fuma_independent_snps = fuma_df[["rsID", "CHR", "BP"]].copy()
 
-    fuma_path = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/fuma_input"
+    fuma_path = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/fuma/fuma_input"
     fuma_df.to_csv(f'{fuma_path}/fuma_input.txt', sep='\t', index=False, encoding='ascii')
     fuma_independent_snps.to_csv(f'{fuma_path}/fuma_indp_snps.txt', sep='\t', index=False, encoding='ascii')
 
-
-    # Create a 0-based BED file for UCSC liftOver
+    # All variants for UCSC liftOver
     bed_df = result_df[['CHR', 'BP', 'variant']].copy()
     bed_df['CHR'] = bed_df['CHR'].astype(str).apply(lambda x: x if x.startswith('chr') else f'chr{x}')
     bed_df['start'] = bed_df['BP'].astype(int) - 1
     bed_df['end'] = bed_df['BP'].astype(int)
     
-    bed_df[['CHR', 'start', 'end', 'variant']].to_csv(f'/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/liftover_input.bed', sep='\t', index=False, header=False)
+    bed_df[['CHR', 'start', 'end', 'variant']].to_csv(f'/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/b37_to_b38/liftover_input.bed', sep='\t', index=False, header=False)

@@ -9,6 +9,8 @@ genes_eqtl <- read.table(gzfile("/Users/sezgi/Documents/dominance_pleiotropy/gen
 susie_eqtl <- read_parquet("/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/GTEx_v11_Susie/Adipose_Subcutaneous.v11.eQTLs.SuSiE_summary.parquet")
 snps_pleio <- read.table("/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/b37_to_b38/pleio_snps_b38.bed")
 
+pip_vals <- read_parquet("/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/merged_pip_values.parquet")
+
 # Adjust SNP_b38 list
 colnames(snps_pleio) <- c("chr", "start", "pos", "variant_id_b37")
 snps_pleio <- snps_pleio %>%
@@ -42,10 +44,23 @@ results_df <- snps_overlapped %>%
   filter(qval <= 0.05)
 
 
-asd <- read.table("/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/merged_gtex_susie_snps.tsv", sep="\t", header = T)
+asd <- read.table("/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/b37_to_b38/gtex_susie_snp_list.tsv", sep="\t", header = T)
 
-length(unique(asd$variant_id_b37))
+length(unique(asd$var_id))
 
 
+susie_genes <- unique(susie_eqtl$phenotype_id)
+susie_snps <- unique(susie_eqtl$variant_id)
 
+all_snps <- unique(snps_eqtl$variant_id)
+
+
+sig_genes <- genes_eqtl %>%
+  filter(qval <= 0.05)
+
+all_genes <- unique(sig_genes$gene_id)
+
+
+all(susie_genes %in% all_genes)
+diff <- setdiff(all_genes, susie_genes)
 
