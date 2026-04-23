@@ -44,9 +44,15 @@ results_df <- snps_overlapped %>%
   filter(qval <= 0.05)
 
 
-asd <- read.table("/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/b37_to_b38/gtex_susie_snp_list.tsv", sep="\t", header = T)
+asd <- read.table("/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/res_all_pleio/gtex_susie_pleio_snps.tsv", sep="\t", header = T)
 
-length(unique(asd$var_id))
+table(asd$biotype)
+
+
+x_tissue <- asd %>%
+  filter(biotype == "protein_coding")
+
+length(unique(x_tissue$variant_id_b37))
 
 
 susie_genes <- unique(susie_eqtl$phenotype_id)
@@ -64,3 +70,11 @@ all_genes <- unique(sig_genes$gene_id)
 all(susie_genes %in% all_genes)
 diff <- setdiff(all_genes, susie_genes)
 
+
+"""--- Resampling Test Results ---
+  Parent Population Size: 12699515
+Subset Size: 1891
+Parent Metric (Median): 0.1709
+Observed Subset Metric (Median): 0.1906
+P-value (2-tailed): 0.3020
+0.302"""
