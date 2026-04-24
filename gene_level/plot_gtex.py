@@ -4,7 +4,9 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 
 
-def run_permutation_test(pip_vals_path, n_iterations=1000, metric=lambda x: np.percentile(x, 95), seed=42):
+def run_permutation_test(pip_vals_path, metric=lambda x: np.percentile(x, 95), n_iterations=1000, seed=42):
+    
+    np.random.seed(seed)
 
     pip_df = pd.read_parquet(pip_vals_path)
     
@@ -17,6 +19,8 @@ def run_permutation_test(pip_vals_path, n_iterations=1000, metric=lambda x: np.p
     # Calculate the observed metrics
     observed_stat = metric(observed_subset)
     parent_stat = metric(parent_pop)
+
+    diff = parent_stat - observed_stat
     
     # Generate the empirical null distribution
     null_distribution = np.zeros(n_iterations)
@@ -25,13 +29,14 @@ def run_permutation_test(pip_vals_path, n_iterations=1000, metric=lambda x: np.p
         print(f"Iteration: {i}")
         # Draw a random sample
         random_sample = np.random.choice(parent_pop, size=n_subset, replace=False)
-        null_distribution[i] = metric(random_sample)
+        metric_i = metric(random_sample)
+        null_distribution[i] = parent_stat - metric_i
         
     # Calculate the empirical p-value
     if observed_stat < parent_stat:
-        p_value = np.sum(null_distribution <= observed_stat) / n_iterations
+        p_value = np.sum(null_distribution >= diff) / n_iterations
     else:
-        p_value = np.sum(null_distribution >= observed_stat) / n_iterations
+        p_value = np.sum(null_distribution <= diff) / n_iterations
         
     # Multiply by 2 for a two-tailed test
     p_value_2tailed = min(1.0, p_value * 2)
@@ -40,8 +45,9 @@ def run_permutation_test(pip_vals_path, n_iterations=1000, metric=lambda x: np.p
     print("--- Resampling Test Results ---")
     print(f"Parent Population Size: {len(parent_pop)}")
     print(f"Subset Size: {n_subset}")
-    print(f"Parent Metric (Median): {parent_stat:.4f}")
-    print(f"Observed Subset Metric (Median): {observed_stat:.4f}")
+    print(f"Parent Metric: {parent_stat:.4f}")
+    print(f"Observed Subset Metric: {observed_stat:.4f}")
+    print(f"Observed Difference: {parent_stat:.4f} - {observed_stat:.4f}")
     print(f"P-value (2-tailed): {p_value_2tailed:.4f}")
     
     return p_value_2tailed
@@ -87,20 +93,23 @@ def gtex_plot(fisher_results_path, pip_vals_path, perm_pip_pval, output_dir):
     # Panel A: Tissue Enrichment (Horizontal)
     # ---------------------------------------------------------
     tissue_df = fisher_all_df[fisher_all_df['type'] == 'tissue'].copy()
-    tissue_df = tissue_df.sort_values('pleio_variants', ascending=False).reset_index(drop=True)
+    tissue_df = tissue_df.sort_values('pleio_signal_itt', ascending=False).reset_index(drop=True)
     
     y_pos_a = np.arange(len(tissue_df))
     # Swapped to barh for horizontal bars
-    ax_a.barh(y_pos_a, tissue_df['pleio_variants'], color=colors[0], height=0.7, edgecolor='black', linewidth=1.0)
+    ax_a.barh(y_pos_a, tissue_df['pleio_signal_itt'], color=colors[0], height=0.7, edgecolor='black', linewidth=1.0)
     
     # Significance markers (adjusted X/Y coordinates for horizontal alignment)
     for i, row in tissue_df.iterrows():
         if row['is_significant']:
-            ax_a.text(row['pleio_variants'] + (tissue_df['pleio_variants'].max() * 0.01), i+0.35, 
+            ax_a.text(row['pleio_signal_itt'] + (tissue_df['pleio_signal_itt'].max() * 0.01), i+0.35, 
+                      '**', ha='left', va='center', fontsize=12, color='black')
+        elif row["p_value"] < 0.05:
+            ax_a.text(row['pleio_signal_itt'] + (tissue_df['pleio_signal_itt'].max() * 0.01), i+0.35, 
                       '*', ha='left', va='center', fontsize=12, color='black')
             
-    ax_a.plot([], [], marker='', color='black', linestyle='None', markersize=10, label='* FDR-corrected p < 0.05')
-    ax_a.legend(frameon=False, loc='lower right')
+    ax_b.text(-0.25, -0.95, '** FDR-corrected p < 0.05\n* Nominal p < 0.05', 
+            transform=ax_b.transAxes, ha='right', va='top', fontsize=11)
             
     # Swapped ticks and labels to the Y-axis
     ax_a.set_xlim(left=0)
@@ -108,7 +117,7 @@ def gtex_plot(fisher_results_path, pip_vals_path, perm_pip_pval, output_dir):
     ax_a.set_yticks(y_pos_a)
     ax_a.set_yticklabels(tissue_df['name'])
     ax_a.invert_yaxis() # Flips the axis so the highest value is at the top
-    ax_a.set_xlabel('Pleiotropic Variants (N)')
+    ax_a.set_xlabel('Independent Signal with Pleiotropic Variants (N)')
     
     # Shifted the 'A' label further left to account for the long tissue names on the Y-axis
     ax_a.text(-0.45, 1.045, 'A.', transform=ax_a.transAxes, fontsize=16, fontweight='bold', va='top')
@@ -118,8 +127,9 @@ def gtex_plot(fisher_results_path, pip_vals_path, perm_pip_pval, output_dir):
     # Panel B: Biotype Enrichment
     # ---------------------------------------------------------
     bio_df = fisher_all_df[fisher_all_df['type'] == 'biotype'].copy()
+    bio_df = bio_df[bio_df["pleio_signal_itt"] > 0].copy()
     bio_df['name'] = bio_df['name'].str.title()
-    bio_df = bio_df.sort_values('pleio_variants', ascending=False).reset_index(drop=True)
+    bio_df = bio_df.sort_values('pleio_signal_itt', ascending=False).reset_index(drop=True)
     
     x_pos_b = np.arange(len(bio_df))
     
@@ -132,21 +142,28 @@ def gtex_plot(fisher_results_path, pip_vals_path, perm_pip_pval, output_dir):
 
     for i in range(len(bio_df)):
         biotype_name = bio_df['name'].iloc[i]
-        bar_color = biotype_colors.get(biotype_name, '#7E818D')
+        bar_color = biotype_colors.get(biotype_name, '#7E818D') 
         
-        ax_b.bar(x_pos_b[i], bio_df['pleio_variants'].iloc[i], color=bar_color, 
-                 width=0.7, edgecolor='black', linewidth=1.0, label=bio_df['name'].iloc[i])
-    
+        ax_b.bar(x_pos_b[i], bio_df['pleio_signal_itt'].iloc[i], color=bar_color, 
+                 width=0.7, edgecolor='black', linewidth=1.0, label=biotype_name)
+                 
+        # --- NEW: Add significance markers centered above vertical bars ---
+        if bio_df['is_significant'].iloc[i]:
+            ax_b.text(x_pos_b[i], bio_df['pleio_signal_itt'].iloc[i] + (bio_df['pleio_signal_itt'].max() * 0.02), 
+                      '**', ha='center', va='bottom', fontsize=12, color='black')
+        elif bio_df['p_value'].iloc[i] < 0.05:
+            ax_b.text(x_pos_b[i], bio_df['pleio_signal_itt'].iloc[i] + (bio_df['pleio_signal_itt'].max() * 0.02), 
+                      '*', ha='center', va='bottom', fontsize=12, color='black')
+ 
     main_legend = ax_b.legend(frameon=True, edgecolor='black', fancybox=False, framealpha=1.0, loc='upper right', ncol=1, fontsize=10)
     ax_b.add_artist(main_legend)
     
-    star_line, = ax_b.plot([], [], marker='', color='black', linestyle='None', markersize=10)
-    ax_b.legend([star_line], ['* FDR-corrected p < 0.05'], frameon=False, 
-                loc='upper right', bbox_to_anchor=(1.0, 0.65), fontsize=9)
+    ax_b.text(0.98, 0.65, '** FDR-corrected p < 0.05\n* Nominal p < 0.05', 
+              transform=ax_b.transAxes, ha='right', va='top', fontsize=9)
 
     ax_b.set_xticks(x_pos_b)
     ax_b.set_xticklabels("", rotation=0, ha="center")
-    ax_b.set_ylabel('Pleiotropic Variants (N)')
+    ax_b.set_ylabel('Independent Signal with\nPleiotropic Variants (N)')
     ax_b.set_xlabel('Gene Biotypes')
     ax_b.text(-0.15, 1.1, 'B.', transform=ax_b.transAxes, fontsize=16, fontweight='bold', va='top')
 
@@ -218,7 +235,7 @@ def gtex_plot(fisher_results_path, pip_vals_path, perm_pip_pval, output_dir):
     # Labels and formatted Panel Letter
     ax_c.set_xlabel('Posterior Inclusion Probability (PIP)')
     ax_c.set_ylabel('Percentage of Variants (%)')
-    ax_c.text(-0.15, 1.02, 'C.', transform=ax_c.transAxes, fontsize=16, fontweight='bold', va='top')
+    ax_c.text(-0.15, 1.09, 'C.', transform=ax_c.transAxes, fontsize=16, fontweight='bold', va='top')
     
     # Publication-ready legend with solid white background and sharp corners
     main_legend = ax_c.legend(frameon=True, edgecolor='black', fancybox=False, framealpha=1.0, loc='upper right', fontsize=10)
@@ -236,11 +253,34 @@ def gtex_plot(fisher_results_path, pip_vals_path, perm_pip_pval, output_dir):
 if __name__ == "__main__":
 
     output_dir = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/plots"
-    fisher_results_path = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/res_all_pleio/fisher_results.tsv"
+    fisher_results_path = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/res_all_pleio/eqtl_summary.tsv"
     pip_vals_path = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/res_all_pleio/merged_pip_values.parquet"
 
-    # perm_pip_pval = run_permutation_test(pip_vals_path)
-    # print(perm_pip_pval)
+    #perm_pip_95th = run_permutation_test(pip_vals_path)
+    #print(perm_pip_95th)
+    """
+        --- Resampling Test Results ---
+        Parent Population Size: 12699515
+        Subset Size: 1891
+        Parent Metric: 0.1709
+        Observed Subset Metric: 0.1906
+        Observed Difference: 0.1709 - 0.1906
+        P-value (2-tailed): 0.3040
+        0.304
+    """
+
+    #perm_pip_median = run_permutation_test(pip_vals_path, metric=np.median)
+    #print(perm_pip_median)
+    """
+        --- Resampling Test Results ---
+        Parent Population Size: 12699515
+        Subset Size: 1891
+        Parent Metric: 0.0092
+        Observed Subset Metric: 0.0229
+        Observed Difference: 0.0092 - 0.0229
+        P-value (2-tailed): 0.0000
+        0.0
+    """
     
-    perm_pip_pval = 0.2720
-    gtex_plot(fisher_results_path, pip_vals_path, perm_pip_pval, output_dir)
+    perm_pip_95th = 0.304
+    gtex_plot(fisher_results_path, pip_vals_path, perm_pip_95th, output_dir)

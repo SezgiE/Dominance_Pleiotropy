@@ -49,8 +49,20 @@ asd <- read.table("/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/r
 table(asd$biotype)
 
 
-x_tissue <- asd %>%
-  filter(biotype == "protein_coding")
+x_tissue <- susie_eqtl %>%
+  group_by(phenotype_id) %>%
+  summarise(indep_sig = n_distinct(cs_id, na.rm = TRUE))
+
+sum(x_tissue$indep_sig)
+
+x_tissue <- susie_eqtl %>%
+  group_by(biotype, phenotype_id) %>%
+  summarise(unique_cs = n_distinct(cs_id), .groups = "drop") %>%
+  group_by(biotype) %>%
+  summarise(total_cs = sum(unique_cs))
+
+x2_tissue <- susie_eqtl %>%
+  filter(phenotype_id == "ENSG00000292994.2")
 
 length(unique(x_tissue$variant_id_b37))
 

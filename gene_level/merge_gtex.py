@@ -14,19 +14,19 @@ def fdr_correction(df, alpha_thresh=0.05):
     return df
 
 
-def fisher_test_tissue(tissue_summary_df):
+def fisher_test(df):
 
     cols_to_fill = ["pleio_signal_itt", "non_pleio_signal_itt"]
-    tissue_summary_df[cols_to_fill] = tissue_summary_df[cols_to_fill].fillna(0)
+    df[cols_to_fill] = df[cols_to_fill].fillna(0)
 
-    total_pleio = tissue_summary_df["pleio_signal_itt"].sum()
-    total_non_pleio = tissue_summary_df["non_pleio_signal_itt"].sum()
+    total_pleio = df["pleio_signal_itt"].sum()
+    total_non_pleio = df["non_pleio_signal_itt"].sum()
 
     # Pleio signal but not in this tissue (ntt)
-    tissue_summary_df["pleio_signal_ntt"] = total_pleio - tissue_summary_df["pleio_signal_itt"]
+    df["pleio_signal_ntt"] = total_pleio - df["pleio_signal_itt"]
 
     # Non-Pleio and not in this tissue (ntt)              
-    tissue_summary_df["non_pleio_signal_ntt"] = total_non_pleio - tissue_summary_df["non_pleio_signal_itt"] 
+    df["non_pleio_signal_ntt"] = total_non_pleio - df["non_pleio_signal_itt"] 
     
 
     def apply_fisher(row):
@@ -36,16 +36,16 @@ def fisher_test_tissue(tissue_summary_df):
         ]
         return pd.Series(fisher_exact(table, alternative='greater'))
     
-    tissue_summary_df[["odds_ratio", "p_value"]] = tissue_summary_df.apply(apply_fisher, axis=1)
+    df[["odds_ratio", "p_value"]] = df.apply(apply_fisher, axis=1)
     
 
-    return tissue_summary_df
-
+    return df
+   
 
 def get_total_snps_and_pips(gtex_susie_dir, files, tissue_names, snps_pleio, output_dir):
 
     print("Obtaning total PIPs...")
-    cols_to_read = ["variant_id", "biotype", "pip"]  # Specify your required columns
+    cols_to_read = ["variant_id", "pip"]  # Specify your required columns
     df_list = [pd.read_parquet(os.path.join(gtex_susie_dir, f), columns=cols_to_read).assign(tissue=t) for f, t in zip(files, tissue_names)]
     combined_df = pd.concat(df_list, ignore_index=True)
     
@@ -53,9 +53,6 @@ def get_total_snps_and_pips(gtex_susie_dir, files, tissue_names, snps_pleio, out
     combined_df["var_id"] = combined_df[["chr", "pos"]].astype(str).agg(':'.join, axis=1)
     snps_pleio["var_id"] = snps_pleio[["chr", "pos"]].astype(str).agg(':'.join, axis=1)
 
-    set1 = set(combined_df["var_id"])
-    set2 = set(snps_pleio["var_id"])
-    total_snps = set1.union(set2)
 
     all_pip_vals = combined_df["pip"].dropna().tolist()
     pleio_pip_vals= pd.merge(combined_df, snps_pleio[["var_id"]].drop_duplicates(), on="var_id", how="inner")["pip"].dropna().tolist()
@@ -73,12 +70,8 @@ def get_total_snps_and_pips(gtex_susie_dir, files, tissue_names, snps_pleio, out
     pip_df["source"] = pip_df["source"].astype("category")
     pip_df["PIP"] = pip_df["PIP"].astype("float32")
     
-    pip_df.to_parquet(f"{output_dir}/merged_pip_values.parquet", index=False)
+    return pip_df.to_parquet(f"{output_dir}/merged_pip_values.parquet", index=False)
 
-    gtex_susie_snps_biotype = combined_df[["var_id", "biotype"]]
-
-    return total_snps, gtex_susie_snps_biotype
-    
 
 def gtex_analyze_tissues(tissue_name, snps_eqtl_path, gene_eqtl_path, 
                 susie_eqtl_path, snps_pleio):
@@ -137,11 +130,15 @@ def gtex_analyze_tissues(tissue_name, snps_eqtl_path, gene_eqtl_path,
 
 
     # Summarize tissue for Fisher's test
-    pleio_tissue = (clean_df["chr"].astype(str) + ":" + clean_df["pos"].astype(str)).tolist()
-    tissue_all = (susie_eqtl["chr"].astype(str) + ":" + susie_eqtl["pos"].astype(str)).tolist()
+    pleio_tissue =clean_df.groupby('gene_id')['cs_id'].nunique().sum()
 
-    A = len(pleio_tissue)                                                       # Pleio signal in this tissue (itt)
-    B = len([item for item in tissue_all if item not in set(pleio_tissue)])     # Non-Pleio signal in this tissue (itt)
+    tissue_all = susie_eqtl.groupby('phenotype_id')['cs_id'].nunique().sum()
+    
+    # pleio_tissue = (clean_df["chr"].astype(str) + ":" + clean_df["pos"].astype(str)).tolist(
+    # tissue_all = (susie_eqtl["chr"].astype(str) + ":" + susie_eqtl["pos"].astype(str)).tolist()
+
+    A = pleio_tissue                      # Pleio signal in this tissue (itt)
+    B = tissue_all  - pleio_tissue        # Non-Pleio signal in this tissue (itt)
         
     tissue_summary = {
         "name": tissue_name,
@@ -149,51 +146,30 @@ def gtex_analyze_tissues(tissue_name, snps_eqtl_path, gene_eqtl_path,
         "non_pleio_signal_itt": B
     }
 
+    # Summarize Gene biotypes for Fisher's test
+    pleio_biotype = clean_df.groupby(["biotype", "gene_id"])["cs_id"].nunique().groupby("biotype").sum()
+    tissue_all_biotype = susie_eqtl.groupby(["biotype", "phenotype_id"])["cs_id"].nunique().groupby("biotype").sum()
 
-    return clean_df, tissue_summary
-
-
-def gtex_biotype(pleio_bio_results, pleio_all, gtex_susie_snps_biotype, total_snps):
-
-    print("Running Fisher's Exact test for biotype enrichment")
-
-    biotypes = pleio_bio_results["biotype"].unique().tolist()
-
-    fisher_res_list = []
+    biotype_df = pd.DataFrame({
+        "A_b": pleio_biotype, 
+        "tissue_total": tissue_all_biotype
+    }).fillna(0)
     
-    for biotype in biotypes:
+    biotype_df["B_b"] = biotype_df["tissue_total"] - biotype_df["A_b"]
+    
+    # list of dictionaries for each biotype
+    biotype_summary_list = []
+    for biotype, row in biotype_df.iterrows():
+        biotype_summary_list.append({
+            "name": tissue_name,
+            "biotype": biotype,
+            "pleio_signal_itt": int(row["A_b"]),
+            "non_pleio_signal_itt": int(row["B_b"])
+        })
+    
+    biotype_summary_df = pd.DataFrame(biotype_summary_list) if biotype_summary_list else pd.DataFrame()
 
-        print(f"Testing biotype: {biotype}")
-        # Bio and pleio
-        pleio_bio_df = pleio_bio_results[pleio_bio_results["biotype"] == biotype]
-        pleio_bio = set(pleio_bio_df["chr"].astype(str) + ":" + pleio_bio_df["pos"].astype(str))
-        
-        # Pleio
-        pleio_all = set(snps_pleio["chr"].astype(str) + ":" + snps_pleio["pos"].astype(str))
-        
-        # Bio
-        susie_biotype = gtex_susie_snps_biotype[gtex_susie_snps_biotype["biotype"] == biotype]
-        bio_all = set(susie_biotype["var_id"])
-        
-        # Fisher's Exact Test
-        A = len(pleio_bio)                                         # Pleio and in this bio
-        B = len(bio_all - pleio_bio)                               # Non-Pleio in but in this bio
-        C = len(pleio_all - bio_all)                               # Pleio in but not in this bio
-        D = len(total_snps.difference(pleio_all, bio_all))         # Non-Pleio and not in this tissue 
-
-        odds_ratio, p_val = fisher_exact([[A, B], [C, D]], alternative='greater')
-            
-        results_fisher = {
-            "name": biotype,
-            "pleio_variants": A,
-            "total_sig_variants": A + B,
-            "odds_ratio": odds_ratio,
-            "p_value": p_val
-        }
-        
-        fisher_res_list.append(results_fisher)
-
-    return fisher_res_list
+    return clean_df, tissue_summary, biotype_summary_df
 
 
 if __name__ == "__main__":
@@ -218,11 +194,11 @@ if __name__ == "__main__":
     files = [f for f in os.listdir(gtex_susie_dir) if f.endswith(suffix)]
     tissue_names = [f.replace(suffix, "") for f in files]
 
-    # Total unique SNPs across all tissues + pleiotropic SNPs for Fisher's test
-    #total_snps, gtex_susie_snps_biotype = get_total_snps_and_pips(gtex_susie_dir, files, tissue_names, snps_pleio, output_dir)
+    get_total_snps_and_pips(gtex_susie_dir, files, tissue_names, snps_pleio, output_dir)
 
     result_list = []
     tissue_summaries = []
+    biotype_summaries = []
 
     for tissue_name in tissue_names:
 
@@ -234,32 +210,34 @@ if __name__ == "__main__":
         susie_eqtl_path = os.path.join(gtex_susie_dir, f"{tissue_name}.v11.eQTLs.SuSiE_summary.parquet")
        
         # Filter and merge data for the current tissue
-        result_df, tissue_summary = gtex_analyze_tissues(tissue_name, snps_eqtl_path, gene_eqtl_path, 
+        result_df, tissue_summary, biotype_summary = gtex_analyze_tissues(tissue_name, snps_eqtl_path, gene_eqtl_path, 
                                             susie_eqtl_path, snps_pleio)
         result_list.append(result_df)
         tissue_summaries.append(tissue_summary)
+        biotype_summaries.append(biotype_summary)
 
 
     result_df = pd.concat(result_list, ignore_index=True) if result_list else pd.DataFrame()
     result_df.to_csv(f"{output_dir}/gtex_susie_pleio_snps.tsv", sep="\t", index=False)
 
-
+    # Tissue
     tissue_summary_df = pd.DataFrame(tissue_summaries) if tissue_summaries else pd.DataFrame()
        
-    tissue_summary_df = fisher_test_tissue(tissue_summary_df)
+    tissue_summary_df = fisher_test(tissue_summary_df)
     tissue_summary_df = fdr_correction(tissue_summary_df)
-    tissue_summary_df.to_csv(f"{output_dir}/gtex_summary.tsv", sep="\t", index=False)
 
+    # Biotype
+    merged_biotype_summary_df = pd.concat(biotype_summaries, ignore_index=True) if biotype_summaries else pd.DataFrame()
+    biotype_results = merged_biotype_summary_df.groupby(["biotype"], as_index=False)[["pleio_signal_itt", "non_pleio_signal_itt"]].sum()
+    biotype_results.rename(columns={"biotype": "name"}, inplace=True)
 
-    # #------------------------------------ Analysis by Biotype --------------------------------#
-    # fisher_bio_res = gtex_biotype(result_df, snps_pleio, gtex_susie_snps_biotype, total_snps)
-    # fisher_bio_df = pd.DataFrame(fisher_bio_res) if fisher_bio_res else pd.DataFrame()
+    biotype_results = fisher_test(biotype_results)
+    biotype_results = fdr_correction(biotype_results)
 
-    # fisher_bio_df = fdr_correction(fisher_bio_df)
+    # Merge
+    tissue_summary_df.insert(0, 'type', "tissue")
+    biotype_results.insert(0, 'type', "biotype")
 
-    # # Merged
-    # fisher_tissue_df.insert(0, 'type', "tissue")
-    # fisher_bio_df.insert(0, 'type', "biotype")
+    eqtl_summary_df = pd.concat([tissue_summary_df, biotype_results], ignore_index=True)
+    eqtl_summary_df.to_csv(f"{output_dir}/eqtl_summary.tsv", sep="\t", index=False)
 
-    # fisher_all_df = pd.concat([fisher_tissue_df, fisher_bio_df], ignore_index=True)
-    # fisher_all_df.to_csv(f"{output_dir}/fisher_results.tsv", sep="\t", index=False)
