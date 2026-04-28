@@ -43,8 +43,13 @@ snps_overlapped <- snps_overlapped %>%
 results_df <- snps_overlapped %>%
   filter(qval <= 0.05)
 
+background <- read.table("/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/gtex_res/fuma_background_genes.txt", sep=",", header = T)
+length(unique(background$ENSG))
 
-asd <- read.table("/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/res_all_pleio/gtex_susie_pleio_snps.tsv", sep="\t", header = T)
+asd <- read.table("/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/gtex_res/gtex_susie_pleio_snps.tsv", sep="\t", header = T)
+
+gene_id = unique(asd$gene_id)
+ensg = unique(asd$ENSG)
 
 table(asd$biotype)
 

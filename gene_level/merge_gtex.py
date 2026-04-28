@@ -45,15 +45,33 @@ def fisher_test(df):
 def get_total_snps_and_pips(gtex_susie_dir, files, tissue_names, snps_pleio, output_dir):
 
     print("Obtaning total PIPs...")
-    cols_to_read = ["variant_id", "pip"]  # Specify your required columns
-    df_list = [pd.read_parquet(os.path.join(gtex_susie_dir, f), columns=cols_to_read).assign(tissue=t) for f, t in zip(files, tissue_names)]
-    combined_df = pd.concat(df_list, ignore_index=True)
+    cols_to_read = ["phenotype_id", "cs_id", "variant_id", "pip"]  
+    df_list = [
+        pd.read_parquet(os.path.join(gtex_susie_dir, f), columns=cols_to_read).assign(tissue=t) 
+        for f, t in zip(files, tissue_names)
+    ]
     
+    combined_df = pd.concat(df_list, ignore_index=True)
+
+
+    combined_df[["ENSG", "version"]] = combined_df["phenotype_id"].str.split(".", n=2, expand=True).iloc[:, :2]
     combined_df[["chr", "pos"]] = combined_df["variant_id"].str.split("_", n=2, expand=True).iloc[:, :2]
-    combined_df["var_id"] = combined_df[["chr", "pos"]].astype(str).agg(':'.join, axis=1)
-    snps_pleio["var_id"] = snps_pleio[["chr", "pos"]].astype(str).agg(':'.join, axis=1)
+    
+    combined_df["var_id"] = combined_df["chr"].astype(str) + ":" + combined_df["pos"].astype(str)
+    snps_pleio["var_id"] = snps_pleio["chr"].astype(str) + ":" + snps_pleio["pos"].astype(str)
 
+    
+    print("Total independent causal signal: ", combined_df.groupby(["tissue", 'ENSG'])['cs_id'].nunique().sum())
+    
+    
+    # Fuma Gene2func background genes
+    background_genes = combined_df.drop_duplicates(subset=["ENSG"])
+    print("Total Unique Causal Genes: ", len(background_genes))
+    background_genes = background_genes[["ENSG"]]  
+    background_genes.to_csv(f'{output_dir}/fuma_background_genes.txt', index=False)
+    
 
+    # Combine all the PIP values
     all_pip_vals = combined_df["pip"].dropna().tolist()
     pleio_pip_vals= pd.merge(combined_df, snps_pleio[["var_id"]].drop_duplicates(), on="var_id", how="inner")["pip"].dropna().tolist()
 
@@ -70,6 +88,7 @@ def get_total_snps_and_pips(gtex_susie_dir, files, tissue_names, snps_pleio, out
     pip_df["source"] = pip_df["source"].astype("category")
     pip_df["PIP"] = pip_df["PIP"].astype("float32")
     
+
     return pip_df.to_parquet(f"{output_dir}/merged_pip_values.parquet", index=False)
 
 
@@ -82,6 +101,7 @@ def gtex_analyze_tissues(tissue_name, snps_eqtl_path, gene_eqtl_path,
 
 
     # Adjust SNPs and Susie eqtl
+    susie_eqtl[["ENSG", "version"]] = susie_eqtl["phenotype_id"].str.split(".", n=2, expand=True).iloc[:, :2]
     susie_eqtl[["chr", "pos", "ref", "alt", "build"]] = susie_eqtl["variant_id"].str.split("_", expand=True)
     susie_eqtl = susie_eqtl.drop(columns=["variant_id"])
 
@@ -123,16 +143,16 @@ def gtex_analyze_tissues(tissue_name, snps_eqtl_path, gene_eqtl_path,
     clean_df.insert(0, 'tissue_name', tissue_name)
 
     clean_df = clean_df[[
-        "tissue_name", "gene_id", "gene_name", "gene_start", "gene_end", "biotype", "strand", 
+        "tissue_name", "gene_id", "ENSG", "version", "gene_name", "gene_start", "gene_end", "biotype", "strand", 
         "beta_shape1", "beta_shape2", "pval_beta", "qval", "variant_id_b37", "chr", "pos", "ref", "alt", 
         "build", "start_distance", "af", "cs_id", "cs_size", "pip", "slope", "slope_se", "afc", "afc_se", "pval_nominal"
     ]]
 
 
     # Summarize tissue for Fisher's test
-    pleio_tissue =clean_df.groupby('gene_id')['cs_id'].nunique().sum()
+    pleio_tissue = clean_df.groupby('ENSG')['cs_id'].nunique().sum()
 
-    tissue_all = susie_eqtl.groupby('phenotype_id')['cs_id'].nunique().sum()
+    tissue_all = susie_eqtl.groupby('ENSG')['cs_id'].nunique().sum()
     
     # pleio_tissue = (clean_df["chr"].astype(str) + ":" + clean_df["pos"].astype(str)).tolist(
     # tissue_all = (susie_eqtl["chr"].astype(str) + ":" + susie_eqtl["pos"].astype(str)).tolist()
@@ -147,8 +167,8 @@ def gtex_analyze_tissues(tissue_name, snps_eqtl_path, gene_eqtl_path,
     }
 
     # Summarize Gene biotypes for Fisher's test
-    pleio_biotype = clean_df.groupby(["biotype", "gene_id"])["cs_id"].nunique().groupby("biotype").sum()
-    tissue_all_biotype = susie_eqtl.groupby(["biotype", "phenotype_id"])["cs_id"].nunique().groupby("biotype").sum()
+    pleio_biotype = clean_df.groupby(["biotype", "ENSG"])["cs_id"].nunique().groupby("biotype").sum()
+    tissue_all_biotype = susie_eqtl.groupby(["biotype", "ENSG"])["cs_id"].nunique().groupby("biotype").sum()
 
     biotype_df = pd.DataFrame({
         "A_b": pleio_biotype, 
@@ -175,7 +195,7 @@ def gtex_analyze_tissues(tissue_name, snps_eqtl_path, gene_eqtl_path,
 if __name__ == "__main__":
 
     # Define output directory
-    output_dir = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex"
+    output_dir = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/gtex_res"
 
     # GTEx files directories
     gtex_susie_dir = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/GTEx_v11_Susie"
@@ -220,13 +240,18 @@ if __name__ == "__main__":
     result_df = pd.concat(result_list, ignore_index=True) if result_list else pd.DataFrame()
     result_df.to_csv(f"{output_dir}/gtex_susie_pleio_snps.tsv", sep="\t", index=False)
 
-    # Tissue
+    # Fuma Gene2func pleiotropic genes (gene of interest)
+    pleio_genes = result_df[['ENSG']].drop_duplicates()
+    print("Total Pleiotropic Causal Genes: ", len(pleio_genes))    
+    pleio_genes.to_csv(f'{output_dir}/fuma_pleio_genes.txt', index=False)
+
+    # Tissue Enrichment Test
     tissue_summary_df = pd.DataFrame(tissue_summaries) if tissue_summaries else pd.DataFrame()
        
     tissue_summary_df = fisher_test(tissue_summary_df)
     tissue_summary_df = fdr_correction(tissue_summary_df)
 
-    # Biotype
+    # Biotype Enrichment Test
     merged_biotype_summary_df = pd.concat(biotype_summaries, ignore_index=True) if biotype_summaries else pd.DataFrame()
     biotype_results = merged_biotype_summary_df.groupby(["biotype"], as_index=False)[["pleio_signal_itt", "non_pleio_signal_itt"]].sum()
     biotype_results.rename(columns={"biotype": "name"}, inplace=True)
@@ -234,7 +259,7 @@ if __name__ == "__main__":
     biotype_results = fisher_test(biotype_results)
     biotype_results = fdr_correction(biotype_results)
 
-    # Merge
+    # Merge Enrichment results
     tissue_summary_df.insert(0, 'type', "tissue")
     biotype_results.insert(0, 'type', "biotype")
 
