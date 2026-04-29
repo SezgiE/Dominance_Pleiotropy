@@ -3,10 +3,11 @@ import glob
 import numpy as np
 import pandas as pd
 import gseapy as gp
+from gseapy import Biomart
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import matplotlib.patches as mpatches
-
+bm = Biomart()
 
 
 def set_style():
@@ -58,15 +59,24 @@ def std_expression(gtex_med_TPM_path, gtex_pleio_res_path, tissues_dir):
     return gtex_tpm_pleio_std
 
 
-def enrichment_analysis(df, output_dir):
-    gene_symbols = df['Description'].dropna().unique().tolist()
-    print(len(gene_symbols))
+def enrichment_genetsets(gtex_pleio_res_path, output_dir):
+    
+    gtex_pleio = pd.read_csv(gtex_pleio_res_path, sep='\t')
+    gene_ids = gtex_pleio['ENSG'].dropna().unique().tolist()
+    
+    # ENSG to gene symbol Map
+    gene_id_dict ={'ensembl_gene_id': gene_ids}
+    results = bm.query(dataset='hsapiens_gene_ensembl',
+                    attributes=['ensembl_gene_id', 'external_gene_name', 'entrezgene_id', 'go_id'],
+                    filters=gene_id_dict)
+    gene_symbols = results["external_gene_name"].dropna().unique().tolist()
 
+    # Run enrichment
     enr = gp.enrichr(
         gene_list=gene_symbols,
         gene_sets=['MSigDB_Hallmark_2020','KEGG_2026', 
                    "Reactome_Pathways_2024", "GO_Biological_Process_2025",
-                   "GO_Molecular_Function_2025", "GTEx_Tissues_V8_2023"],
+                   "GO_Molecular_Function_2025", "GO_Cellular_Component_2025"],
         organism='human',
         outdir=None
     )
@@ -156,7 +166,8 @@ def plot_geneset(df, output_dir):
     
     # Data Prep
     df['Term'] = df['Term'].str.replace(r'\s*\([^)]*\)', '', regex=True)
-    df['Term'] = df['Term'].str.title()
+    mask = df['Gene_set'] == 'KEGG_2026'
+    df.loc[mask, 'Term'] = df.loc[mask, 'Term'].str.title()
     df['Gene_set'] = df['Gene_set'].str.replace('_', ' ')
     df_sorted = df.sort_values(['Gene_set', 'Term'], ascending=[False, False]).reset_index(drop=True)
     
@@ -176,7 +187,7 @@ def plot_geneset(df, output_dir):
     set_style()
     fig, (ax_l, ax_r, ax_spacer, ax_m) = plt.subplots(
         1, 4, 
-        figsize=(11.5, len(df_sorted) * 0.3 + 1.5), 
+        figsize=(11.5, len(df_sorted) * 0.3), 
         sharey=True,
         gridspec_kw={'width_ratios': [2, 2, 0.2, 1.2], 'wspace': 0} 
     )
@@ -268,5 +279,5 @@ if __name__ == "__main__":
     std_exp_data = std_expression(gtex_med_TPM_path, gtex_pleio_res_path, tissues_dir)
     plot_heatmap(std_exp_data, output_dir)
 
-    enrichment_df = enrichment_analysis(std_exp_data, output_dir)
+    enrichment_df = enrichment_genetsets(gtex_pleio_res_path, output_dir)
     plot_geneset(enrichment_df, output_dir)
