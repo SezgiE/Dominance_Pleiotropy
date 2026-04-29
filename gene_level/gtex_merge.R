@@ -1,4 +1,5 @@
 library(arrow)
+library(readr)
 library(tidyverse)
 
 rm(list = ls(all=TRUE)) # clean memory
@@ -10,6 +11,10 @@ susie_eqtl <- read_parquet("/Users/sezgi/Documents/dominance_pleiotropy/gene_lev
 snps_pleio <- read.table("/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/b37_to_b38/pleio_snps_b38.bed")
 
 pip_vals <- read_parquet("/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/merged_pip_values.parquet")
+
+gtex_med_TPM <- read_tsv("/Users/sezgi/Downloads/GTEx_Analysis_2025-08-22_v11_RNASeQCv2.4.3_gene_median_tpm.gct", skip = 2)
+gtex_TPM <- read_tsv("/Users/sezgi/Downloads/GTEx_Analysis_2025-08-22_v11_RNASeQCv2.4.3_gene_tpm.gct", skip=2)
+gtex_TPM_rd <- read_tsv("/Users/sezgi/Downloads/gene_reads_v11_adipose_subcutaneous.gct", skip=2)
 
 # Adjust SNP_b38 list
 colnames(snps_pleio) <- c("chr", "start", "pos", "variant_id_b37")
