@@ -5,7 +5,7 @@ import pandas as pd
 import gseapy as gp
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
-from matplotlib.lines import Line2D
+import matplotlib.patches as mpatches
 
 
 
@@ -58,7 +58,7 @@ def std_expression(gtex_med_TPM_path, gtex_pleio_res_path, tissues_dir):
     return gtex_tpm_pleio_std
 
 
-def hallmark_enrichment_analysis(df, output_dir):
+def enrichment_analysis(df, output_dir):
     gene_symbols = df['Description'].dropna().unique().tolist()
     print(len(gene_symbols))
 
@@ -152,14 +152,15 @@ def plot_heatmap(df, output_dir):
     plt.savefig(f'{output_dir}/expression_heatmap.pdf', dpi=600, bbox_inches='tight')
 
 
-def plot_publication_mirror(df, output_dir):
+def plot_geneset(df, output_dir):
     
     # Data Prep
     df['Term'] = df['Term'].str.replace(r'\s*\([^)]*\)', '', regex=True)
     df['Term'] = df['Term'].str.title()
+    df['Gene_set'] = df['Gene_set'].str.replace('_', ' ')
     df_sorted = df.sort_values(['Gene_set', 'Term'], ascending=[False, False]).reset_index(drop=True)
     
-    colors = ['#3C5488', '#E64B35', '#4DBBD5', '#00A087', '#7E818D']
+    colors = ['#3C5488', '#00A087', '#E64B35', '#4DBBD5', '#7E818D']
     unique_dbs = df_sorted['Gene_set'].unique()
     db_color_map = {db: colors[i % len(colors)] for i, db in enumerate(unique_dbs)}
     row_colors = df_sorted['Gene_set'].map(db_color_map)
@@ -170,56 +171,90 @@ def plot_publication_mirror(df, output_dir):
         all_genes.update(str(genes_str).split(';'))
     unique_genes = sorted(list(all_genes))
 
+
     # Initialize the plot
     set_style()
-    fig, (ax_l, ax_r, ax_m) = plt.subplots(
-        1, 3, 
-        figsize=(11, len(df_sorted) * 0.3 + 1.5), 
+    fig, (ax_l, ax_r, ax_spacer, ax_m) = plt.subplots(
+        1, 4, 
+        figsize=(11.5, len(df_sorted) * 0.3 + 1.5), 
         sharey=True,
-        gridspec_kw={'width_ratios': [2, 2, 1.2], 'wspace': 0} 
+        gridspec_kw={'width_ratios': [2, 2, 0.2, 1.2], 'wspace': 0} 
     )
+    ax_spacer.set_visible(False)
+
+
+    # Horizontal background shading
+    for i in range(len(df_sorted)):
+        for ax in [ax_l, ax_r, ax_m]:
+            ax.axhspan(i - 0.4, i + 0.4, color='gray', alpha=0.08, zorder=0, lw=0)
 
 
     # Overlap histogram
     ax_l.barh(range(len(df_sorted)), -df_sorted['Overlap'], 
-              color="#E64B35", edgecolor='black', linewidth=0.5, height=0.7, zorder=3)
-    ax_l.set_xlabel('Overlap Proportion', fontsize=12)
+              color=row_colors, edgecolor='black', linewidth=1, height=0.7, zorder=3)
+    ax_l.set_xlim(right=0)
+    ax_l.set_xlabel('Overlap Proportion', fontsize=12, labelpad=10)
     ax_l.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: "" if x == 0 else f"{abs(x):.2f}"))
 
 
     # -log10(FDR) plot
-    ax_r.barh(range(len(df_sorted)), df_sorted['log10(FDR)'], 
-              color="#3C5488", edgecolor='black', linewidth=0.5, height=0.7, zorder=3)
-    ax_r.set_xlabel(r'$-\log_{10}(\text{FDR})$', fontsize=12)
+    ax_r.scatter(df_sorted['log10(FDR)'], range(len(df_sorted)), 
+                 color=row_colors, edgecolor='black', linewidth=1, s=70, zorder=3)
+    ax_r.set_xlim(left=0, right=4.5)
+    ax_r.set_xlabel(r'$-\log_{10}(\text{FDR-adj. p < 0.05})$', fontsize=12, labelpad=10)
 
 
     # Y-labels
     ax_l.set_yticks(range(len(df_sorted)))
     ax_l.set_yticklabels(df_sorted['Term'], ha='right', fontsize=9)
     
-    # Hide the shared spine in the middle
+    # The shared spine in the middle
     ax_l.spines['right'].set_visible(True)
     ax_r.spines['left'].set_visible(True)
     
     # Ensure a vertical line exists at x=0 for both
-    ax_l.axvline(0, color='black', linewidth=0.5, zorder=4)
-    ax_r.axvline(0, color='black', linewidth=0.5, zorder=4)
+    ax_l.axvline(0, color='black', linewidth=1, zorder=4)
+    ax_r.axvline(0, color='black', linewidth=1, zorder=4)
 
 
+    # Matrix Panel (Far Right)
+    for i, row in df_sorted.iterrows():
+        row_genes = str(row['Genes']).split(';')
+        for j, gene in enumerate(unique_genes):
+            if gene in row_genes:
+                ax_m.scatter(j, i, color=row_colors[i], marker='s', s=200, 
+                             edgecolor='black', linewidth=1, zorder=3)
+    
+    # Configure the matrix
+    ax_m.set_xticks(range(len(unique_genes)))
+    ax_m.set_xticklabels(unique_genes, rotation=45, ha='right', fontsize=10)
+    ax_m.xaxis.tick_bottom()
+    ax_m.tick_params(axis='x', direction='inout', length=8, width=1)
+    
+    # Lock the limits
+    ax_m.set_xlim(-0.5, len(unique_genes) - 0.5)
+    ax_l.set_ylim(-1, len(df_sorted) - 0.5)
+
+
+    # Final cleanup
     for ax in [ax_l, ax_r, ax_m]:
         for spine in ['top', 'right', 'left', 'bottom']:
             if ax == ax_m and spine == 'top': continue
             if spine != 'bottom': ax.spines[spine].set_visible(False)
         
-        if ax != ax_m:
-            ax.grid(axis='x', linestyle='--', alpha=0.3, zorder=0)
-        
-        ax.tick_params(axis='y', left=False)
+        ax.tick_params(axis='y', left=False, right=False)
+
+
+    # Create legend
+    legend_handles = [mpatches.Patch(facecolor=color, edgecolor='black', linewidth=1, label=db) for db, color in db_color_map.items()]
+
+    fig.legend(handles=legend_handles, loc='lower center', bbox_to_anchor=(0.648, 0.99), 
+               ncol=len(db_color_map), frameon=False, fontsize=10, handlelength=1.2, 
+               columnspacing=2.0)
 
 
     plt.tight_layout()
-    plt.savefig(f'{output_dir}/mirror_enrichment_plot.pdf', dpi=300, bbox_inches='tight')
-
+    plt.savefig(f'{output_dir}/geneset_enrichment_plot.pdf', dpi=300, bbox_inches='tight')
 
 
 if __name__ == "__main__":
@@ -233,5 +268,5 @@ if __name__ == "__main__":
     std_exp_data = std_expression(gtex_med_TPM_path, gtex_pleio_res_path, tissues_dir)
     plot_heatmap(std_exp_data, output_dir)
 
-    enrichment_df = hallmark_enrichment_analysis(std_exp_data, output_dir)
-    plot_publication_mirror(enrichment_df, output_dir)
+    enrichment_df = enrichment_analysis(std_exp_data, output_dir)
+    plot_geneset(enrichment_df, output_dir)

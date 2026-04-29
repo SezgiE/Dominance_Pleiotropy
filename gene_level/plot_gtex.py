@@ -108,7 +108,7 @@ def gtex_plot(fisher_results_path, pip_vals_path, perm_pip_pval, output_dir):
             ax_a.text(row['pleio_signal_itt'] + (tissue_df['pleio_signal_itt'].max() * 0.01), i+0.35, 
                       '*', ha='left', va='center', fontsize=12, color='black')
             
-    ax_b.text(-0.25, -0.95, '** FDR-corrected p < 0.05\n* Nominal p < 0.05', 
+    ax_b.text(-0.25, -0.95, '** FDR-adjusted p < 0.05\n* Nominal p < 0.05', 
             transform=ax_b.transAxes, ha='right', va='top', fontsize=11)
             
     # Swapped ticks and labels to the Y-axis
@@ -158,7 +158,7 @@ def gtex_plot(fisher_results_path, pip_vals_path, perm_pip_pval, output_dir):
     main_legend = ax_b.legend(frameon=True, edgecolor='black', fancybox=False, framealpha=1.0, loc='upper right', ncol=1, fontsize=10)
     ax_b.add_artist(main_legend)
     
-    ax_b.text(0.98, 0.65, '** FDR-corrected p < 0.05\n* Nominal p < 0.05', 
+    ax_b.text(0.98, 0.65, '** FDR-adjusted p < 0.05\n* Nominal p < 0.05', 
               transform=ax_b.transAxes, ha='right', va='top', fontsize=9)
 
     ax_b.set_xticks(x_pos_b)
@@ -214,7 +214,7 @@ def gtex_plot(fisher_results_path, pip_vals_path, perm_pip_pval, output_dir):
     # Apply Symmetric Log Scale to Y-axis to visualize the skewed tail
     ax_c.set_yscale('symlog', linthresh=0.1) 
     
-    # Force specific symmetrical log ticks so the axis is readable
+    # Force specific symmetrical log ticks
     ax_c.set_yticks([-100, -10, -1, -0.1, 0, 0.1, 1, 10, 100])
     
     # Custom formatter to handle absolute values AND clean up log formatting
@@ -253,8 +253,8 @@ def gtex_plot(fisher_results_path, pip_vals_path, perm_pip_pval, output_dir):
 if __name__ == "__main__":
 
     output_dir = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/plots"
-    fisher_results_path = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/res_all_pleio/eqtl_summary.tsv"
-    pip_vals_path = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/res_all_pleio/merged_pip_values.parquet"
+    fisher_results_path = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/gtex_res/eqtl_summary.tsv"
+    pip_vals_path = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/gtex_res/merged_pip_values.parquet"
 
     #perm_pip_95th = run_permutation_test(pip_vals_path)
     #print(perm_pip_95th)
