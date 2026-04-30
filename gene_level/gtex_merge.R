@@ -12,9 +12,15 @@ snps_pleio <- read.table("/Users/sezgi/Documents/dominance_pleiotropy/gene_level
 
 pip_vals <- read_parquet("/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/merged_pip_values.parquet")
 
-gtex_med_TPM <- read_tsv("/Users/sezgi/Downloads/GTEx_Analysis_2025-08-22_v11_RNASeQCv2.4.3_gene_median_tpm.gct", skip = 2)
+gtex_med_TPM <- read_tsv("/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/GTEx_expression/GTEx_Analysis_2025-08-22_v11_RNASeQCv2.4.3_gene_median_tpm.gct", skip = 2)
 gtex_TPM <- read_tsv("/Users/sezgi/Downloads/GTEx_Analysis_2025-08-22_v11_RNASeQCv2.4.3_gene_tpm.gct", skip=2)
 gtex_TPM_rd <- read_tsv("/Users/sezgi/Downloads/gene_reads_v11_adipose_subcutaneous.gct", skip=2)
+
+
+
+gtex_med_TPM_SCARNA21B <- gtex_med_TPM %>%
+  filter(Description == "SCARNA21B")
+
 
 # Adjust SNP_b38 list
 colnames(snps_pleio) <- c("chr", "start", "pos", "variant_id_b37")
@@ -53,8 +59,18 @@ length(unique(background$ENSG))
 
 asd <- read.table("/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/gtex_res/gtex_susie_pleio_snps.tsv", sep="\t", header = T)
 
-gene_id = unique(asd$gene_id)
-ensg = unique(asd$ENSG)
+vepp <- read.table("/Users/sezgi/Documents/dominance_pleiotropy/loci_level/loci_results/vep_res.txt", sep="\t", header = T)
+
+strand <- read.table("/Users/sezgi/Documents/dominance_pleiotropy/gene_level/magma/magma_v1/genes_loc38.loc", sep="\t", header = F)
+
+manuel_magma <- read.table("/Users/sezgi/Documents/dominance_pleiotropy/gene_level/magma/magma_v1/manuel_pleio_mapping.genes_log.txt", sep="\t", header = T)
+
+
+strand <- strand %>%
+  mutate(diff = V4-V3)
+
+gene_id = unique(vepp$Gene)
+ensg = unique(vepp$Uploaded_variation)
 
 table(asd$biotype)
 

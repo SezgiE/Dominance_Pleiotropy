@@ -39,12 +39,12 @@ all_genes_raw <- getBM(
   mart = ensembl
 )
 
-write.table(all_genes_raw, file = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/magma_v1/ensembl_genes_raw38.tsv", 
-            sep = "\t", row.names = F, quote = F)
-
 # Format for MAGMA requirements
 magma_loc <- all_genes_raw[all_genes_raw$chromosome_name %in% as.character(1:22), ]
 magma_loc$chromosome_name <- as.numeric(magma_loc$chromosome_name)
+
+write.table(magma_loc, file = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/magma_v1/ensembl_genes_raw38.tsv", 
+            sep = "\t", row.names = F, quote = F)
 
 # Recode Strand to + and -
 magma_loc$strand <- ifelse(magma_loc$strand == 1, "+", "-")

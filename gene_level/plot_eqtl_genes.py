@@ -29,20 +29,13 @@ def set_style():
     })
 
 
-def std_expression(gtex_med_TPM_path, gtex_pleio_res_path, tissues_dir):
+def std_expression(gtex_med_TPM_path, gtex_pleio_res_path):
     
     
     gtex_med_tpm = pd.read_csv(gtex_med_TPM_path, sep='\t', skiprows=2)
     gtex_pleio = pd.read_csv(gtex_pleio_res_path, sep='\t')
 
     gene_list = gtex_pleio["gene_id"].unique()
-
-    tissues = [
-        os.path.basename(f).split(".v11")[0] 
-        for f in glob.glob(os.path.join(tissues_dir, "*.parquet"))
-        ]
-
-    cols_to_select = ["Name", "Description"] + tissues
     
     gtex_tpm_pleio = gtex_med_tpm[gtex_med_tpm['Name'].isin(gene_list)].copy()
 
@@ -265,18 +258,17 @@ def plot_geneset(df, output_dir):
 
 
     plt.tight_layout()
-    plt.savefig(f'{output_dir}/geneset_enrichment_plot.pdf', dpi=300, bbox_inches='tight')
+    plt.savefig(f'{output_dir}/geneset_enrichment_plot.pdf', dpi=600, bbox_inches='tight')
 
 
 if __name__ == "__main__":
 
     gtex_med_TPM_path = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/GTEx_expression/GTEx_Analysis_2025-08-22_v11_RNASeQCv2.4.3_gene_median_tpm.gct"
     gtex_pleio_res_path = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/gtex_res/gtex_susie_pleio_snps.tsv"
-    tissues_dir = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/GTEx_v11_Susie"
 
     output_dir = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/plots"
 
-    std_exp_data = std_expression(gtex_med_TPM_path, gtex_pleio_res_path, tissues_dir)
+    std_exp_data = std_expression(gtex_med_TPM_path, gtex_pleio_res_path)
     plot_heatmap(std_exp_data, output_dir)
 
     enrichment_df = enrichment_genetsets(gtex_pleio_res_path, output_dir)

@@ -7,6 +7,31 @@ from statsmodels.stats.multitest import multipletests
 bm = Biomart()
 
 
+def merge_magma_genes(magma_res_path, manuel_res_path):
+
+    # Mapped genes from MAGMA
+    mapped_genes = set()
+    
+    with open(magma_res_path, 'r') as f:
+        for line in f:
+            if line.startswith('#'):
+                continue
+            parts = line.strip().split()
+            if len(parts) > 2:
+                mapped_genes.add(parts[0])
+    
+
+    with open(manuel_res_path, 'r') as f:
+        for line_m in f:
+            if line_m.startswith('#'):
+                continue
+            parts_m = line_m.strip().split()
+            if len(parts_m) > 2:
+                mapped_genes.add(parts_m[0])
+    
+    return mapped_genes
+
+
 def fdr_correction(df, alpha_thresh=0.05):
     
     raw_pvals = df["p_value"]
@@ -43,7 +68,7 @@ def fisher_test(df):
     return df
 
 
-def process_data_enrich(background_genes_path, magma_res_path):
+def process_data_enrich(background_genes_path, mapped_genes):
     
     # Whole genes in chr1-22 based on Ensembl b38
     bg_genes = pd.read_csv(background_genes_path, sep='\t')
@@ -88,17 +113,7 @@ def process_data_enrich(background_genes_path, magma_res_path):
     return chr_input, biotype_input
 
 
-def enrichment_getsets(magma_res_path, output_dir):
-    
-    # Mapped genes from MAGMA
-    mapped_genes = set()
-    with open(magma_res_path, 'r') as f:
-        for line in f:
-            if line.startswith('#'):
-                continue
-            parts = line.strip().split()
-            if len(parts) > 2:
-                mapped_genes.add(parts[0])
+def enrichment_getsets(mapped_genes, output_dir):
     
     # ENSG to gene symbol Map
     gene_id_dict ={'ensembl_gene_id': mapped_genes}
@@ -139,11 +154,11 @@ if __name__ == "__main__":
 
     background_genes_path = '/Users/sezgi/Documents/dominance_pleiotropy/gene_level/magma/magma_v1/ensembl_genes_raw38.tsv'
     magma_res_path = '/Users/sezgi/Documents/dominance_pleiotropy/gene_level/magma/magma_v1/magma_pleio_mapping.genes.annot'
-
+    manuel_res_path = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/magma/magma_v1/manuel_pleio_mapping.genes.annot"
     output_dir = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/magma"
 
-    
-    fisher_input_chr, fisher_input_bio = process_data_enrich(background_genes_path, magma_res_path)
+    mapped_genes = merge_magma_genes(magma_res_path, manuel_res_path)
+    fisher_input_chr, fisher_input_bio = process_data_enrich(background_genes_path, mapped_genes)
     
     # CHR enrichment
     chr_enrich_res = fisher_test(fisher_input_chr)
@@ -161,4 +176,4 @@ if __name__ == "__main__":
     summary_df.to_csv(f"{output_dir}/magma_enrich_summary.tsv", sep="\t", index=False)
 
     # Geneset enrichment
-    geneset_enrich_res = enrichment_getsets(magma_res_path, output_dir)
+    geneset_enrich_res = enrichment_getsets(mapped_genes, output_dir)
