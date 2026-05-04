@@ -32,27 +32,13 @@ unique_traits <- dom_pleio %>%
   rename("phenotype_code" = sig_dom_traits)
 
 
-phen_info_Neale <- fread("/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/all_phenotypes_info.tsv.gz")
-phen_info_UKB <- fread("/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/UKB_info.tsv", select = c("field_id", "main_category"))
-phen_domains <- fread("/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/UKB_domains.tsv", select = c("category_id", "title"))
+phen_info_Neale <- fread("/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/all_phenotypes_info.tsv")
+phen_domains <- fread("/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/supp_table1.tsv", select = c("phenotype_code", "category"))
 
 phen_info_filtered <- unique_traits %>%
   inner_join(phen_info_Neale, by = c("phenotype_code" = "phenotype"))
 
-phen_info_filtered <- phen_info_filtered %>%
-  mutate(field_id = str_extract(phenotype_code, "^[^_]+")) %>%
-  mutate(field_id = as.character(field_id)) %>% 
-  left_join(
-    phen_info_UKB %>% mutate(field_id = as.character(field_id)), 
-    by = "field_id"
-  ) 
-
-phen_info <- phen_info_filtered %>%
-  left_join(
-    phen_domains, by=c("main_category" = "category_id")
-  ) %>%
-  rename("category_code"= main_category,
-         "category"= title)
+phen_info_filtered <- merge(phen_info_filtered, phen_domains, by.x = "phenotype_code", by.y = "phenotype_code", all.x = TRUE, all.y = FALSE)
 
 
-write.xlsx(phen_info, file = "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/phen_dict.xlsx", firstRow = TRUE, columnWidths = "auto")
+write.xlsx(phen_info_filtered, file = "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/phen_dict.xlsx", firstRow = TRUE, columnWidths = "auto")
