@@ -7,7 +7,7 @@ import os
 
 def compile_significant_snps(input_dir, variant_info, output_dir, hwe_sig=1e-6, info_threshold=0.9):
 
-    # 1. Find all files in the input directory
+    # Find all files in the input directory
     all_files = glob.glob(os.path.join(input_dir, "*.tsv.bgz"))
     all_files.sort()
 
@@ -27,7 +27,9 @@ def compile_significant_snps(input_dir, variant_info, output_dir, hwe_sig=1e-6, 
 
     print(f"Found {len(all_files)} files. Extracting 'variant' and the last column...")
 
-    # 2. Read each file, extract 'variant' and the last column (0 if not significant, 1 if only additive, 2 if both dominance & additive)  
+    global_max_d_beta = None 
+    global_min_d_beta = None
+    # Read each file (last column: 0 if not significant, 1 if only additive, 2 if only dominance, 3 if both dominance & additive)  
     for f in all_files:
 
         filename = os.path.basename(f)
@@ -75,6 +77,16 @@ def compile_significant_snps(input_dir, variant_info, output_dir, hwe_sig=1e-6, 
                         var_dict[vid]["dom_pvals"][phen_code] = row['dominance_pval']
                         var_dict[vid]["dom_betas"][phen_code] = row['dominance_beta']
 
+                        # Max and min dominance beta tracking for simulation parameter setting
+                        if vid.split(':')[0] not in ['X', 'Y', 'XY', 'MT']:
+                            d_beta_in_file = abs(row['dominance_beta'])
+                            if global_max_d_beta is None or d_beta_in_file > global_max_d_beta[2]:
+                                global_max_d_beta = (phen_code, vid, d_beta_in_file)
+                            
+                            if global_min_d_beta is None or d_beta_in_file < global_min_d_beta[2]:
+                                global_min_d_beta = (phen_code, vid, d_beta_in_file)
+                        
+
                         if status == 2: # Over dominance
                             var_dict[vid]["sig_over_dom_traits"].append(phen_code)
                             var_dict[vid]["over_dom_pvals"][phen_code] = row['dominance_pval']
@@ -84,6 +96,7 @@ def compile_significant_snps(input_dir, variant_info, output_dir, hwe_sig=1e-6, 
             df = df[['variant', phen_code]].copy()
             df.set_index('variant', inplace=True)
             dfs.append(df)
+
             
         except Exception as e:
             print(f"Skipping {f} - error reading file: {e}")
@@ -91,7 +104,7 @@ def compile_significant_snps(input_dir, variant_info, output_dir, hwe_sig=1e-6, 
     print(f"Successfully loaded {len(dfs)} files. Building the final matrix...")
 
 
-    # 3. Concatenate everything side-by-side based on the 'variant' index in a significance matrix format
+    # Concatenate everything side-by-side based on the 'variant' index in a significance matrix format
     merged_matrix = pd.concat(dfs, axis=1)
     merged_matrix.fillna(0, inplace=True)
 
@@ -99,7 +112,7 @@ def compile_significant_snps(input_dir, variant_info, output_dir, hwe_sig=1e-6, 
     merged_matrix.reset_index(inplace=True)
     
 
-    # 4. Calculate total significant counts for additive and dominance across all phenotypes
+    # Calculate total significant counts for additive and dominance across all phenotypes
     pheno_cols = [c for c in merged_matrix.columns if c != 'variant']
     merged_matrix['add_sig_total'] = merged_matrix[pheno_cols].isin([1, 3]).sum(axis=1)
     merged_matrix['dom_sig_total'] = merged_matrix[pheno_cols].isin([2, 3]).sum(axis=1)
@@ -130,7 +143,7 @@ def compile_significant_snps(input_dir, variant_info, output_dir, hwe_sig=1e-6, 
     # Merge the new columns onto your existing wide matrix
     merged_matrix = merged_matrix.merge(dict_df, on='variant', how='left')
 
-    # 5. Read the variant info to get chr, rsID, info, and minor_AF for each variant
+    # Read the variant info to get chr, rsID, info, and minor_AF for each variant
     print("Reading variant information for filtering...")
     var_info = pd.read_csv(variant_info, sep='\t', compression='gzip',
                             usecols=["variant", "chr", "rsid", "info", "minor_AF", "p_hwe"],
@@ -141,7 +154,7 @@ def compile_significant_snps(input_dir, variant_info, output_dir, hwe_sig=1e-6, 
     print(f"Variants in the significance matrix that have variant info: {len(var_info)}.")
 
 
-    # 6. Apply HWE, INFO, Chromosome filters and remove INDELs and multi-allelic variants
+    # Apply HWE, INFO, Chromosome filters and remove INDELs and multi-allelic variants
     print("Applying filters: HWE p-value > 1e-6, info > 0.9, and removing sex chromosomes...")
     var_info_HWE = var_info[var_info['p_hwe'] >= hwe_sig].copy()
     print(f"removed {len(var_info) - len(var_info_HWE)} variants based on HWE p-value threshold of {hwe_sig}. Remaining: {len(var_info_HWE)}.")
@@ -163,7 +176,7 @@ def compile_significant_snps(input_dir, variant_info, output_dir, hwe_sig=1e-6, 
     print(f"removed {len(var_filtered_IND) - len(var_filtered_IND_DIAL)} variants based on diallelic filter. Remaining: {len(var_filtered_IND_DIAL)}.")
 
 
-    # 7. Merge the filtered variant info back to the  significance matrix to keep only high-quality variants
+    # Merge the filtered variant info back to the  significance matrix to keep only high-quality variants
     print(f"After filtering steps, {len(var_filtered_IND_DIAL)} variants remain.")
     print("Merging variant annotations back to the significance matrix...")
     merged_matrix = merged_matrix.merge(var_filtered_IND_DIAL, on='variant', how='inner')
@@ -177,11 +190,13 @@ def compile_significant_snps(input_dir, variant_info, output_dir, hwe_sig=1e-6, 
 
     output_matrix = merged_matrix[lead_cols + remaining_cols]
 
-    # 8. Save the final output
+    # Save the final output
     output_all = f"{output_dir}/all_sig_SNPs.tsv.gz"
     print(f"Saving {len(output_matrix)} high-quality unique SNPs to {output_all}...")
     output_matrix.to_csv(output_all, sep='\t', index=False, compression='gzip')
     print("Done!")
+    print(f"Max absolute dominance beta across all files: {global_max_d_beta}")
+    print(f"Min absolute dominance beta across all files: {global_min_d_beta}")
 
 
 if __name__ == "__main__":

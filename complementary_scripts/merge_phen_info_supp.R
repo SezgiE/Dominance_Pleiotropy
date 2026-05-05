@@ -71,7 +71,7 @@ merged_df <- merged_df %>%
 
 
 final_df <- merged_df %>%
-  select(phenotype_code, phenotype_description, title, main_category, sex, variable_type, source, n_non_missing, n_missing, n_controls, n_cases, wget, additive_wget) %>%
+  select(phenotype_code, phenotype_description, title, sex, variable_type, source, n_non_missing, n_missing, n_controls, n_cases, wget, additive_wget) %>%
   rename(category = title)
 
 length(unique(final_df$category))
