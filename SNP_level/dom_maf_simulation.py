@@ -130,7 +130,7 @@ def plot_dom_maf_simulation(df):
         
         ax.set_xlabel('Minor Allele Frequency (MAF)')
         if idx == 0:
-            ax.set_ylabel(r'$-\log_{10}(P)$ of Additive Model')
+            ax.set_ylabel(r'Mean $-\log_{10}(P)$ based on Additive Model')
         
         ax.set_title('')
     
@@ -151,7 +151,7 @@ def plot_dom_maf_simulation(df):
 
 if __name__ == "__main__":
     # Run the simulation and save results
-    dom_maf_simulation()
+    #dom_maf_simulation()
 
     # Load results and plot
     df_results = pd.read_csv('/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/results/dom_simulation_results.tsv', sep="\t")
