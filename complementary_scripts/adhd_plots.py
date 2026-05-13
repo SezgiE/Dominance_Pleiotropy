@@ -204,28 +204,26 @@ def plot_beta_distributions(trend_res_path, output_dir):
     
     rater_colors = {"m": "#3C5488", "f": "#F39B7F", "t": "#00A087"}
 
-    age_markers = {7: 'o', 10: '^', 12: 's'}  # Circle, Triangle, Square
+    age_linestyles = {7: '-', 10: '--', 12: ':'}  # Solid, Dashed, Dotted
     
-
     for i, item in enumerate(items):
         subset = df[df['q_name'] == item]
         n_points = len(subset)
-        
 
         offsets = np.linspace(-0.3, 0.3, n_points) if n_points > 1 else [0]
         
         for j, (_, row) in enumerate(subset.iterrows()):
             color = rater_colors.get(str(row['rater']).lower(), '#333333')
-            
-
             age_val = int(row['rated_age'])
-            marker_shape = age_markers.get(age_val, 'o')
             
-
-            ax.errorbar(row['beta_bc'], i + offsets[j], 
-                        xerr=[[row['err_low']], [row['err_up']]], 
-                        marker=marker_shape, linestyle='none', color=color, markersize=3.5, 
+            ls = age_linestyles.get(age_val, '-')
+            
+            eb = ax.errorbar(row['beta_bc'], i + offsets[j], 
+                        xerr=[[row['err_low']], [row['err_up']]],
+                        marker='o', linestyle='none', color=color, markersize=3.5, 
                         elinewidth=1.0, capsize=0)
+            
+            eb[2][0].set_linestyle(ls)
             
 
     ax.axvline(0, color='gray', linestyle='--', linewidth=0.8, alpha=0.7)
@@ -240,7 +238,8 @@ def plot_beta_distributions(trend_res_path, output_dir):
     l1 = ax.legend(custom_lines_rater, ['Mother', 'Father', 'Teacher'], title="Respondent", 
               frameon=False, bbox_to_anchor=(1.02, 1), loc='upper left')
               
-    custom_lines_age = [Line2D([0], [0], color='gray', marker=m, lw=0, markersize=4) for m in age_markers.values()]
+    
+    custom_lines_age = [Line2D([0], [0], color='gray', linestyle=ls, lw=1.5) for ls in age_linestyles.values()] 
     l2 = ax.legend(custom_lines_age, ['7', '10', '12'], title="Assessment Age", 
               frameon=False, bbox_to_anchor=(1.02, 0.65), loc='upper left')
               
@@ -253,7 +252,6 @@ def plot_beta_distributions(trend_res_path, output_dir):
     out_path = os.path.join(f"{output_dir}/model_results_IL", "beta_distributions.pdf")
     plt.savefig(out_path, format='pdf', transparent=True)
     plt.close(fig)
-    print(f"Beta distribution plot saved successfully to {out_path}")
 
 
 def scale_combined_figure(trend_res_path, scale_trend_path, output_dir):
@@ -419,6 +417,113 @@ def scale_combined_figure(trend_res_path, scale_trend_path, output_dir):
     plt.close(fig)
 
 
+
+def plot_parental_trends(scale_data_dir, parental_output):
+    """
+    Reads sumscore_Data.RDS, filters distinct twins prioritizing non-missing 
+    parental age and EA, and plots the trends across Year of Birth.
+    """
+    # ------------------ DATA PROCESSING ------------------
+    file_path = os.path.join(scale_data_dir, "sumscore_Data.RDS")
+    result = pyreadr.read_r(file_path)
+    df = result[None]
+    
+    # Keep complete cases for base columns
+    cols_to_check = ["FID", "PID", "mult_id_fam", "sex", "yob", "zyg", "assigned_age"]
+    df = df.dropna(subset=[c for c in cols_to_check if c in df.columns]).copy()
+    
+    # Filter out teachers
+    df = df[df['respondent'] != 't'].copy()
+
+
+    def process_parent(data, resp_type):
+        d = data[data['respondent'] == resp_type].copy()
+        
+        d['na_age'] = d['parent_Age'].isna()
+        d['na_ea'] = d['parent_EA'].isna()
+        
+        d = d.sort_values(by=['twin_id', 'na_age', 'na_ea'])
+        
+        d = d.drop_duplicates(subset=['twin_id'], keep='first').copy()
+        
+        d['parental_age'] = d['parent_Age'] - d['measured_age']
+
+        return d[['participant_id', 'twin_id', 'yob', 'assigned_age', 'respondent', 'parent_EA', 'parental_age']]
+
+
+    mother_data = process_parent(df, "m")
+    father_data = process_parent(df, "f")
+    
+    # Combine for plotting
+    plot_df = pd.concat([mother_data, father_data], ignore_index=True)
+    
+    # Calculate yearly means, standard deviations, N, and SEM
+    trend_stats = plot_df.groupby(['yob', 'respondent']).agg(
+        mean_age=('parental_age', 'mean'),
+        sd_age=('parental_age', 'std'),
+        n_age=('parental_age', 'count'),
+        mean_ea=('parent_EA', 'mean'),
+        sd_ea=('parent_EA', 'std'),
+        n_ea=('parent_EA', 'count')
+    ).reset_index()
+
+    trend_stats['sem_age'] = trend_stats['sd_age'] / np.sqrt(trend_stats['n_age'])
+    trend_stats['sem_ea'] = trend_stats['sd_ea'] / np.sqrt(trend_stats['n_ea'])
+
+
+    # ------------------ PLOTTING ------------------
+    set_style()
+    
+    fig, axes = plt.subplots(1, 2, figsize=(8, 4))
+    rater_colors = {"m": "#3C5488", "f": "#F39B7F"}
+    
+    panels = [
+        (axes[0], 'mean_age', 'sem_age', 'Parental Age (Years)', 'A.'),
+        (axes[1], 'mean_ea', 'sem_ea', 'Educational Attainment', 'B.')
+    ]
+    
+    for ax, mean_col, sem_col, ylabel, letter in panels:
+        for rater in ['m', 'f']:
+            subset = trend_stats[trend_stats['respondent'] == rater].sort_values('yob')
+            # Drop years where the mean is NaN to prevent broken lines
+            subset = subset.dropna(subset=[mean_col])
+            
+            color = rater_colors[rater]
+            
+            # Plot line and shaded standard error region
+            ax.plot(subset['yob'], subset[mean_col], color=color, linewidth=1.5)
+            ax.fill_between(subset['yob'], 
+                            subset[mean_col] - subset[sem_col], 
+                            subset[mean_col] + subset[sem_col], 
+                            color=color, alpha=0.2, linewidth=0)
+            
+        # Axes formatting
+        ax.set_xlabel("Birth Cohorts")
+        ax.set_ylabel(ylabel)
+        ax.grid(True, axis='y', color='gray', linestyle='-', linewidth=0.2, alpha=0.5)
+        ax.tick_params(axis='x', labelsize=7, colors='black')
+        ax.tick_params(axis='y', labelsize=7, colors='black')
+        
+        # Panel lettering
+        ax.text(-0.15, 1.05, letter, transform=ax.transAxes, 
+                size=12, weight='bold', va='bottom', ha='right')
+
+    # Add single legend at the bottom
+    custom_lines = [Line2D([0], [0], color=c, lw=1.5) for c in rater_colors.values()]
+    fig.legend(custom_lines, ['Mother', 'Father'], title="Respondent",
+               loc='upper center', bbox_to_anchor=(0.5, 0.1), ncol=2, frameon=False)
+
+    # Adjust layout to fit everything and ensure exact size
+    fig.subplots_adjust(left=0.1, right=0.95, top=0.90, bottom=0.20, wspace=0.3)
+    
+    # Save plot
+    plt.savefig(parental_output, format='pdf', dpi=600, transparent=True)
+    plt.close(fig)
+
+    excel_path = os.path.join(os.path.dirname(parental_output), "parental_trends_descriptives.xlsx")
+    trend_stats.to_excel(excel_path, index=False)
+
+
 if __name__ == "__main__":
     
     # ------------------ SETUP ------------------
@@ -427,12 +532,16 @@ if __name__ == "__main__":
     output_dir = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/item_level_analyses"
     
     #plot_item_level_trends(item_data_dir, output_dir)
-    #plot_beta_distributions(trend_res_path, output_dir)
+    plot_beta_distributions(trend_res_path, output_dir)
     
     scale_trend_path = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/sum_score_analyses/model_results_SA/openmx_parameters_SA.xlsx"
     scale_data_dir = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/sum_score_analyses/data_SA"
     scale_out_dir = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/sum_score_analyses/descriptives_SA"
-    scale_combined_figure(scale_data_dir, scale_trend_path, scale_out_dir)
+    #scale_combined_figure(scale_data_dir, scale_trend_path, scale_out_dir)
 
+
+    # Parental EA and Age plotting
+    parental_output = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/EA_QualityControl/trend_age/parental_trend.pdf"
+    #plot_parental_trends(scale_data_dir, parental_output)
 
     

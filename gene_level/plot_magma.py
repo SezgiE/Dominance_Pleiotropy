@@ -222,7 +222,7 @@ def plot_geneset(magma_gene_enrich_path, output_dir):
 
 def plot_heat_and_enrich(df, magma_summary_enrich_path, output_dir):
 
-    # 1. Load Enrichment Data (Fixed the copy-paste bug here)
+    # Load Enrichment Data 
     enrich_df = pd.read_csv(
         magma_summary_enrich_path,
         sep="\t",
