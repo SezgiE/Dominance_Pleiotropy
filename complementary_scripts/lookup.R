@@ -9,8 +9,18 @@ library(openxlsx)
 rm(list = setdiff(ls(all.names = TRUE), c("all_sig_df", "clumped_df")))
 
 #  Load the data 
-merged_path <- "/Users/sezgi/Downloads/FUMA_job727114/snps.txt"
+merged_path <- "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sumstats_QCed/6144_3_sig_SNPs.tsv.bgz"
 coloc_merged <- fread(merged_path)
+
+
+coloc_merged <- coloc_merged %>%
+  filter(dom_sig_total > 1) %>%
+  filter(chr == 6)
+
+is_mch <- coloc_merged %>%
+  filter(pos >= 25000000) %>%
+  filter(pos <= 34000000)
+
 
 
 fuma <- fread("/Users/sezgi/Documents/dominance_pleiotropy/gene_level/fuma_input/fuma_input.txt")
