@@ -8,6 +8,7 @@ def format_qc_table(df):
         'filter_INFO': 'INFO > 0.9 (N)', 'filter_Autosomes': 'Autosomes Only (N)', 
         'filter_INDELs': 'Biallelic SNPs (N)', 'QCed variants': 'Passed QC (N)', 
         'add_sig': 'Add. Sig. (N)', 'add_pleiotropy': 'Add. Pleiotropy (N)', 
+        'add_pleiotropy_category': 'Add. Pleio. Categories (N)',
         'dom_sig': 'Dom. Sig. (N)', 'dom_pleiotropy': 'Dom. Pleiotropy (N)', 
         'dom_pleiotropy_category': 'Dom. Pleio. Categories (N)'
     })
@@ -49,7 +50,7 @@ def snp_desc(snp_info_path, sig_SNPs_path, phen_dict_path):
                         dtype={"variant":str, "chr":str, "pos":int, "add_sig_total":int, "dom_sig_total":int,
                                   "sig_add_traits":str, "sig_dom_traits":str})
     
-    names_list = pd.read_excel(phen_dict_path, usecols=["phenotype_code", "category"])
+    names_list = pd.read_csv(phen_dict_path, sep="\t", usecols=["phenotype_code", "category"])
 
     sig_counts = sig_df.groupby('chr').agg(
         add_sig=('add_sig_total', lambda x: (x > 0).sum()),
@@ -58,6 +59,8 @@ def snp_desc(snp_info_path, sig_SNPs_path, phen_dict_path):
         dom_pleiotropy=('dom_sig_total', lambda x: (x > 1).sum())
     )
 
+
+    # Dominance pleiotropy by categories
     pleio_snps = sig_df[sig_df['dom_sig_total'] > 1][['variant', 'chr', 'sig_dom_traits']].copy()
     pleio_snps['sig_dom_traits'] = pleio_snps['sig_dom_traits'].str.replace(r"[()\s]", "", regex=True).str.split(",")
 
@@ -66,9 +69,22 @@ def snp_desc(snp_info_path, sig_SNPs_path, phen_dict_path):
 
     dom_pleio_cat = cat_counts[cat_counts > 1].groupby('chr').size().rename('dom_pleiotropy_category')
 
-    final_sig_counts = sig_counts.join(dom_pleio_cat).fillna(0).astype(int).reset_index()
-    output_df = output_df.merge(final_sig_counts, on='chr', how='left').fillna(0)
 
+    # Additive pleiotropy by categories
+    pleio_snps_add = sig_df[sig_df['add_sig_total'] > 1][['variant', 'chr', 'sig_add_traits']].copy()
+    pleio_snps_add['sig_add_traits'] = pleio_snps_add['sig_add_traits'].str.replace(r"[()\s]", "", regex=True).str.split(",")
+
+    cat_counts_add = pleio_snps_add.explode('sig_add_traits').merge(names_list, left_on='sig_add_traits', right_on='phenotype_code', how='inner') \
+        .groupby(['chr', 'variant'])['category'].nunique()
+
+    add_pleio_cat = cat_counts_add[cat_counts_add > 1].groupby('chr').size().rename('add_pleiotropy_category')
+    
+
+    # Merge the pleiotropy category counts with the main output dataframe
+    final_sig_counts = sig_counts.join(add_pleio_cat).join(dom_pleio_cat).fillna(0).astype(int).reset_index()
+    
+
+    output_df = output_df.merge(final_sig_counts, on='chr', how='left').fillna(0)
     output_df['chr'] = output_df['chr'].astype(str)
 
     output_df['sort_key'] = pd.to_numeric(output_df['chr'], errors='coerce').fillna(float('inf'))
@@ -95,7 +111,7 @@ if __name__ == "__main__":
    
     snp_info_path = "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/variants.tsv.bgz"
     sig_SNPs_path = "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/significant_SNPs/all_sig_SNPs.tsv.gz"
-    phen_dict_path = "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/phen_dict_renamed.xlsx"
+    phen_dict_path = "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/supp_table1.tsv"
     output_path = "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/results/"
 
     snp_desc(snp_info_path, sig_SNPs_path, phen_dict_path)
