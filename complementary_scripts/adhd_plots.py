@@ -176,10 +176,14 @@ def plot_item_level_trends(trend_res_path, output_dir):
     print(f"Plot saved successfully to {out_path}")
 
 
-def plot_beta_distributions(trend_res_path, output_dir):
+def plot_beta_distributions2(trend_res_path, trend_res_path_corr, output_dir):
 
     df = pd.read_excel(trend_res_path, usecols=["q_name","rater","rated_age","significance", 
                                                 "beta_bc", "low_conf", "up_conf", "lower_thresh", "upper_thresh"])
+    
+    df_corr = pd.read_excel(trend_res_path_corr, usecols=["q_name","rater","rated_age","significance", 
+                                                "beta_bc", "low_conf", "up_conf", "lower_thresh", "upper_thresh"])
+    
     df = df[df['significance'] == True].copy()
     df = df.drop_duplicates(subset=['q_name', 'rater', 'rated_age']).reset_index(drop=True)
     
@@ -249,12 +253,109 @@ def plot_beta_distributions(trend_res_path, output_dir):
     fig.subplots_adjust(left=0.12, right=0.80, top=0.92, bottom=0.15)
 
     
+    out_path = os.path.join(f"{output_dir}/model_results_IL", "beta_distributions_corr.pdf")
+    plt.savefig(out_path, format='pdf', transparent=True)
+    plt.close(fig)
+
+
+def plot_beta_distributions(trend_res_path, trend_res_path_corr, output_dir):
+
+    df = pd.read_excel(trend_res_path, usecols=["q_name","rater","rated_age","significance",
+                                                "beta_bc", "low_conf", "up_conf", "lower_thresh", "upper_thresh"])
+    
+    df_corr = pd.read_excel(trend_res_path_corr, usecols=["q_name","rater","rated_age","significance",
+                                                          "beta_bc", "low_conf", "up_conf", "lower_thresh", "upper_thresh"])
+
+    # Process Baseline (df)
+    df = df[df['significance'] == True].copy()
+    df = df.drop_duplicates(subset=['q_name', 'rater', 'rated_age']).reset_index(drop=True)
+    df['err_low'] = df['beta_bc'] - df['low_conf']
+    df['err_up'] = df['up_conf'] - df['beta_bc']
+    df['q_num'] = df['q_name'].str.extract(r'(\d+)').astype(float)
+    
+    # Process Corrected (df_corr)
+    df_corr = df_corr[df_corr['significance'] == True].copy()
+    df_corr = df_corr.drop_duplicates(subset=['q_name', 'rater', 'rated_age']).reset_index(drop=True)
+    df_corr['err_low'] = df_corr['beta_bc'] - df_corr['low_conf']
+    df_corr['err_up'] = df_corr['up_conf'] - df_corr['beta_bc']
+    df_corr['q_num'] = df_corr['q_name'].str.extract(r'(\d+)').astype(float)
+
+    # Get unique items from BOTH dataframes to ensure a perfectly shared y-axis
+    all_items_df = pd.concat([df[['q_name', 'q_num']], df_corr[['q_name', 'q_num']]]).drop_duplicates()
+    all_items_df = all_items_df.sort_values(by=['q_num'])
+    items = all_items_df['q_name'].tolist()
+    
+    
+    set_style2()
+    # Create 1x2 grid sharing the y-axis
+    fig, axes = plt.subplots(1, 2, figsize=(11, 7), sharey=True)
+    
+    rater_colors = {"m": "#3C5488", "f": "#F39B7F", "t": "#00A087"}
+    age_linestyles = {7: '-', 10: '--', 12: ':'}
+    
+    panels = [
+        (axes[0], df, 'Unadjusted', 'A.'),
+        (axes[1], df_corr, 'Adjusted for Parental EA and Age', 'B.')
+    ]
+    
+    for ax, panel_df, title, panel_letter in panels:
+        # Alternating background stripes
+        for i in range(len(items)):
+            if i % 2 == 0:
+                ax.axhspan(i - 0.5, i + 0.5, color='gray', alpha=0.05, zorder=0)
+                
+        for i, item in enumerate(items):
+            subset = panel_df[panel_df['q_name'] == item]
+            n_points = len(subset)
+            offsets = np.linspace(-0.3, 0.3, n_points) if n_points > 1 else [0]
+            
+            for j, (_, row) in enumerate(subset.iterrows()):
+                color = rater_colors.get(str(row['rater']).lower(), '#333333')
+                age_val = int(row['rated_age'])
+                ls = age_linestyles.get(age_val, '-')
+                
+                eb = ax.errorbar(row['beta_bc'], i + offsets[j], 
+                            xerr=[[row['err_low']], [row['err_up']]],
+                            marker='o', linestyle='none', color=color, markersize=3.5, 
+                            elinewidth=1.0, capsize=0)
+                eb[2][0].set_linestyle(ls)
+                
+        ax.axvline(0, color='gray', linestyle='--', linewidth=0.8, alpha=0.7)
+        ax.set_title(title, fontweight='bold', fontsize=12)
+        ax.set_xlabel("Beta Coefficient (95% CI)", labelpad=10)
+        
+        # Panel lettering
+        ax.text(-0.05 if panel_letter == 'B.' else -0.15, 1.05, panel_letter, 
+                transform=ax.transAxes, size=12, weight='bold', va='bottom', ha='right')
+
+    # Set y-ticks ONLY on the left axis (axes[0])
+    axes[0].set_yticks(range(len(items)))
+    axes[0].set_yticklabels([f"Item {item.replace('q', '')}" for item in items])
+    axes[1].tick_params(left=False) # Remove inner tick marks between the plots
+    axes[1].spines['left'].set_visible(False)
+    
+
+    # Unified legends attached to the figure at the bottom
+    custom_lines_rater = [Line2D([0], [0], color=c, marker='o', lw=0, markersize=4) for c in rater_colors.values()]
+    l1 = fig.legend(custom_lines_rater, ['Mother', 'Father', 'Teacher'], title="Respondent", 
+                    frameon=False, bbox_to_anchor=(0.40, 0.08), loc='upper center', ncol=3,
+                    fontsize=10, title_fontsize=12, handletextpad=0.4, columnspacing=1.0)
+              
+    custom_lines_age = [Line2D([0], [0], color='gray', linestyle=ls, lw=1.5) for ls in age_linestyles.values()] 
+    l2 = fig.legend(custom_lines_age, ['7', '10', '12'], title="Assessment Age", 
+                    frameon=False, bbox_to_anchor=(0.65, 0.08), loc='upper center', ncol=3,
+                    fontsize=10, title_fontsize=12, handletextpad=0.4, columnspacing=1.0)
+
+    # Adjust layout to fit both panels (pushing them together via wspace) and the bottom legend
+    fig.subplots_adjust(left=0.1, right=0.98, top=0.9, bottom=0.18, wspace=0.1)
+
+    
     out_path = os.path.join(f"{output_dir}/model_results_IL", "beta_distributions.pdf")
     plt.savefig(out_path, format='pdf', transparent=True)
     plt.close(fig)
 
 
-def scale_combined_figure(trend_res_path, scale_trend_path, output_dir):
+def scale_combined_figure(trend_res_path, scale_trend_path, scale_trend_path_corr, output_dir):
     os.makedirs(output_dir, exist_ok=True)
     
     # ==========================================
@@ -288,31 +389,39 @@ def scale_combined_figure(trend_res_path, scale_trend_path, output_dir):
     ).reset_index()
     desc_stats['sem_response'] = desc_stats['sd_response'] / np.sqrt(desc_stats['n'])
 
+
     # ==========================================
     # 2. DATA PROCESSING: BOTTOM ROW (BETAS)
     # ==========================================
-    df_betas = pd.read_excel(scale_trend_path, usecols=["scale","rater","rated_age","significance", 
+    df = pd.read_excel(scale_trend_path, usecols=["scale","rater","rated_age","significance",
                                                 "beta_bc", "low_conf", "up_conf", "lower_thresh", "upper_thresh"])
-    df_betas = df_betas[df_betas['significance'] == True].copy()
-    df_betas = df_betas.drop_duplicates(subset=['scale', 'rater', 'rated_age']).reset_index(drop=True)
-
-    ap_scale_df = df_betas[df_betas['scale'] == 'emp'].copy()
-    adhp_scale_df = df_betas[df_betas['scale'] == 'dsm'].copy()
     
-    # Calculate error margins
-    for tmp_df in [ap_scale_df, adhp_scale_df]:
-        tmp_df['err_low'] = tmp_df['beta_bc'] - tmp_df['low_conf']
-        tmp_df['err_up'] = tmp_df['up_conf'] - tmp_df['beta_bc']
-        tmp_df.sort_values(by=['rated_age', 'rater'], inplace=True)
+    df_corr = pd.read_excel(scale_trend_path_corr, usecols=["scale","rater", "rated_age", "significance",
+                                                          "beta_bc", "low_conf", "up_conf", "lower_thresh", "upper_thresh"])
+
+    # Process Baseline (df)
+    df = df[df['significance'] == True].copy()
+    df = df.drop_duplicates(subset=['scale', 'rater', 'rated_age']).reset_index(drop=True)
+    df['err_low'] = df['beta_bc'] - df['low_conf']
+    df['err_up'] = df['up_conf'] - df['beta_bc']
+    
+    # Process Corrected (df_corr)
+    df_corr = df_corr[(df_corr['significance'] == True)].copy()
+    df_corr = df_corr.drop_duplicates(subset=['scale', 'rater', 'rated_age']).reset_index(drop=True)
+    df_corr['err_low'] = df_corr['beta_bc'] - df_corr['low_conf']
+    df_corr['err_up'] = df_corr['up_conf'] - df_corr['beta_bc']
+
+    # Define scales and labels manually to control order
+    scales = ['emp', 'dsm']
+    scale_labels = {'emp': 'AP', 'dsm': 'ADHP'}
 
 
     # ==========================================
     # 3. PLOTTING: COMBINED 2x2 GRID
     # ==========================================
     set_style2()
-    
-    # Initialize 2x2 grid
-    fig, axes = plt.subplots(2, 2, figsize=(8, 6))
+    fig, axes = plt.subplots(2, 2, figsize=(9, 9))
+    fig.subplots_adjust(left=0.1, right=0.98, top=0.93, bottom=0.15, wspace=0.2, hspace=0.4)
     
     # NPG Color Palette & Styles
     rater_colors = {"m": "#3C5488", "f": "#F39B7F", "t": "#00A087"}
@@ -337,29 +446,36 @@ def scale_combined_figure(trend_res_path, scale_trend_path, output_dir):
                     linestyle=age_linestyles.get(str(int(age)), '-'), 
                     linewidth=1.2, marker='o', markersize=3.5)
             
-        ax.set_title(title, fontweight='bold', fontsize=9)
+        ax.set_title(title, fontweight='bold', fontsize=10)
         ax.grid(True, axis='y', color='gray', linestyle='-', linewidth=0.2, alpha=0.5)
-        ax.tick_params(axis='x', labelsize=8)
-        ax.set_xlabel("Birth Cohort", size=10)
+        ax.tick_params(axis='x', labelsize = 9)
+        ax.set_xlabel("Birth Cohort", size=10, labelpad=10)
         
         ax.set_ylim(0, 4)
         ax.set_yticks([0, 1, 2, 3, 4])
-        ax.set_yticklabels([0, 1, 2, 3, 4], fontsize=8)
+        ax.set_yticklabels([0, 1, 2, 3, 4])
         if panel_letter == 'A.':
-            ax.set_ylabel("Mean Sum Score")
+            ax.set_ylabel("Mean Sum Score", size=10, labelpad=10)
             
-        ax.text(-0.15, 1.05, panel_letter, transform=ax.transAxes, 
-                size=10, weight='bold', va='bottom', ha='right')
+        ax.text(-0.05 if panel_letter == 'B.' else -0.1, 1.05, panel_letter, 
+                transform=ax.transAxes, size=12, weight='bold', va='bottom', ha='right')
 
-    # --- Plot Bottom Row (Betas) ---
-    panels_beta = [
-        (axes[1, 0], ap_scale_df, 'AP Scale', 'C.'),
-        (axes[1, 1], adhp_scale_df, 'ADHP Scale', 'D.')
+    # --- Plot Bottom Row (Betas) --- 
+    rater_colors = {"m": "#3C5488", "f": "#F39B7F", "t": "#00A087"}
+    age_linestyles = {7: '-', 10: '--', 12: ':'}
+    
+    panels = [
+        (axes[1, 0], df, 'Unadjusted', 'C.'),
+        (axes[1, 1], df_corr, 'Adjusted for Parental EA and Age', 'D.')
     ]
     
-    for ax, panel_df, title, panel_letter in panels_beta:
-        scales = panel_df['scale'].unique()
+    for ax, panel_df, title, panel_letter in panels:
+        # Alternating background stripes
+        for i in range(len(scales)):
+            if i % 2 == 0:
+                ax.axhspan(i - 0.5, i + 0.5, color='gray', alpha=0.05, zorder=0)
                 
+
         for i, scale_name in enumerate(scales):
             subset = panel_df[panel_df['scale'] == scale_name]
             n_points = len(subset)
@@ -368,54 +484,56 @@ def scale_combined_figure(trend_res_path, scale_trend_path, output_dir):
             for j, (_, row) in enumerate(subset.iterrows()):
                 color = rater_colors.get(str(row['rater']).lower(), '#333333')
                 age_val = int(row['rated_age'])
-                
-                ls = age_linestyles.get(str(age_val), '-')
+                ls = age_linestyles.get(age_val, '-')
                 
                 eb = ax.errorbar(row['beta_bc'], i + offsets[j], 
-                            xerr=[[row['err_low']], [row['err_up']]], 
+                            xerr=[[row['err_low']], [row['err_up']]],
                             marker='o', linestyle='none', color=color, markersize=3.5, 
                             elinewidth=1.0, capsize=0)
-                
                 eb[2][0].set_linestyle(ls)
                 
-                
         ax.axvline(0, color='gray', linestyle='--', linewidth=0.8, alpha=0.7)
-        ax.set_yticks(range(len(scales)))
-        ax.set_yticklabels([])
-        
-        if panel_letter == 'C.':
-            ax.set_ylabel(title, fontsize=10)
-        else:
-            ax.set_ylabel(title, fontsize=10)
-            
-        ax.set_xlabel("Beta Coefficient (95% CI)", size=10,labelpad=10)
-        
-        ax.set_xlim(-0.021, 0.001) 
+        ax.set_title(title, fontweight='bold', fontsize=10)
+        ax.set_xlabel("Beta Coefficient (95% CI)", labelpad=10)
+        ax.tick_params(axis='x', labelsize = 9)
+
+        ax.set_xlim(-0.022, 0.002) 
         ax.set_xticks([-0.020, -0.015, -0.010, -0.005, 0.000])
-        ax.tick_params(axis='x', labelsize=8)
-        ax.tick_params(left=False, bottom=True)
 
-        ax.text(-0.15, 1.05, panel_letter, transform=ax.transAxes, 
-                size=10, weight='bold', va='bottom', ha='right')
+        ax.invert_yaxis()
+        
+        # Panel lettering
+        ax.text(-0.05 if panel_letter == 'D.' else -0.1, 1.05, panel_letter, 
+                transform=ax.transAxes, size=12, weight='bold', va='bottom', ha='right')
 
-    # --- Unified Legends ---
-    custom_lines_rater = [Line2D([0], [0], color=c, lw=1.5, marker='o', markersize=3.5) for c in rater_colors.values()]
-    l1 = fig.legend(custom_lines_rater, ['Mother', 'Father', 'Teacher'], title="Respondent",
-                     loc='upper center', bbox_to_anchor=(0.35, 0.1), ncol=3, frameon=False,
-                     fontsize=8, title_fontsize=10, handletextpad=0.4, columnspacing=1.0)
-                     
-    custom_lines_age = [Line2D([0], [0], color='black', lw=1.5, ls=ls) for ls in age_linestyles.values()]
-    l2 = fig.legend(custom_lines_age, ['7', '10', '12'], title="Age",
-                     loc='upper center', bbox_to_anchor=(0.65, 0.1), ncol=3, frameon=False,
-                     fontsize=8, title_fontsize=10, handletextpad=0.4, columnspacing=1.0)
+    axes[1, 0].set_yticks(range(len(scales)))
+    axes[1, 0].set_yticklabels([scale_labels[s] for s in scales])
+    
+    # Sync limits to ensure stripes perfectly align across the two bottom plots
+    axes[1, 1].set_ylim(axes[1, 0].get_ylim()) 
+    
+    axes[1, 1].tick_params(left=False) 
+    axes[1, 1].spines['left'].set_visible(False)
 
-    # --- Layout & Save ---
-    fig.subplots_adjust(left=0.1, right=0.95, top=0.92, bottom=0.2, wspace=0.25, hspace=0.4)
+    axes[1, 1].set_yticks(axes[1, 0].get_yticks())
+    axes[1, 1].set_yticklabels([])
+    
 
-    out_path = os.path.join(output_dir, "SA_combined.pdf")
+    # Unified legends attached to the figure at the bottom
+    custom_lines_rater = [Line2D([0], [0], color=c, marker='o', lw=0, markersize=4) for c in rater_colors.values()]
+    l1 = fig.legend(custom_lines_rater, ['Mother', 'Father', 'Teacher'], title="Respondent", 
+                    frameon=False, bbox_to_anchor=(0.38, 0.08), loc='upper center', ncol=3,
+                    fontsize=9, title_fontsize=10, handletextpad=0.4, columnspacing=1.0)
+              
+    custom_lines_age = [Line2D([0], [0], color='gray', linestyle=ls, lw=1.5) for ls in age_linestyles.values()] 
+    l2 = fig.legend(custom_lines_age, ['7', '10', '12'], title="Assessment Age", 
+                    frameon=False, bbox_to_anchor=(0.67, 0.08), loc='upper center', ncol=3,
+                    fontsize=9, title_fontsize=10, handletextpad=0.4, columnspacing=1.0)
+
+    
+    out_path = os.path.join(output_dir, "beta_distributions.pdf")
     plt.savefig(out_path, format='pdf', transparent=True)
     plt.close(fig)
-
 
 
 def plot_parental_trends(scale_data_dir, parental_output):
@@ -529,15 +647,17 @@ if __name__ == "__main__":
     # ------------------ SETUP ------------------
     item_data_dir = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/item_level_analyses/data_IL"
     trend_res_path ="/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/item_level_analyses/model_results_IL/trend_plot_df.xlsx"
+    trend_res_path_corr ="/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/item_level_analyses/model_results_IL/trend_plot_df_corr.xlsx"
     output_dir = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/item_level_analyses"
     
     #plot_item_level_trends(item_data_dir, output_dir)
-    plot_beta_distributions(trend_res_path, output_dir)
+    #plot_beta_distributions(trend_res_path, trend_res_path_corr, output_dir)
     
     scale_trend_path = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/sum_score_analyses/model_results_SA/openmx_parameters_SA.xlsx"
+    scale_trend_path_corr = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/sum_score_analyses/model_results_SA/corr/openmx_parameters_corr_SA.xlsx"
     scale_data_dir = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/sum_score_analyses/data_SA"
-    scale_out_dir = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/sum_score_analyses/descriptives_SA"
-    #scale_combined_figure(scale_data_dir, scale_trend_path, scale_out_dir)
+    scale_out_dir = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/sum_score_analyses/model_results_SA"
+    scale_combined_figure(scale_data_dir, scale_trend_path, scale_trend_path_corr, scale_out_dir)
 
 
     # Parental EA and Age plotting
