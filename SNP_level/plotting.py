@@ -11,6 +11,27 @@ import matplotlib.transforms as mtransforms
 from matplotlib.colors import LinearSegmentedColormap 
 
 
+def set_style():
+    """Hardcodes matplotlib parameters to format the plot."""
+    plt.rcParams.update(
+        {
+            "font.family": "sans-serif",
+            "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
+            "font.size": 12,
+            "axes.labelsize": 10,
+            "xtick.labelsize": 9,
+            "ytick.labelsize": 9,
+            "axes.linewidth": 1.0,
+            "axes.spines.top": False,
+            "axes.spines.right": False,
+            "xtick.direction": "out",
+            "ytick.direction": "out",
+            "pdf.fonttype": 42,
+            "ps.fonttype": 42,
+        }
+    )
+
+
 def plot_chromosome_density(merged_df, out_dir, bin_size=1_000_000):
     """
     Generates a high-resolution chromosome density map of similarity scores.
@@ -139,17 +160,17 @@ def plot_chromosome_density(merged_df, out_dir, bin_size=1_000_000):
     print(f"Density map successfully saved to: {output_file}")
 
 
-def plot_manhattan(merged_df, out_dir):
+def plot_manhattan(sig_SNPs_df, out_dir):
     # 1. Prepare Dataset (Cumulative Positions)
-    merged_df = merged_df.sort_values(['chr', 'pos'])
+    sig_SNPs_df = sig_SNPs_df.sort_values(['chr', 'pos'])
     
     # Calculate chromosome lengths and cumulative offsets
-    chr_lengths = merged_df.groupby('chr')['pos'].max()
+    chr_lengths = sig_SNPs_df.groupby('chr')['pos'].max()
     offsets = chr_lengths.cumsum().shift(1).fillna(0)
-    merged_df['BPcum'] = merged_df['pos'] + merged_df['chr'].map(offsets)
+    sig_SNPs_df['BPcum'] = sig_SNPs_df['pos'] + sig_SNPs_df['chr'].map(offsets)
     
     # Calculate centers for X-axis labels
-    axis_df = merged_df.groupby('chr')['BPcum'].agg(['min', 'max']).mean(axis=1)
+    axis_df = sig_SNPs_df.groupby('chr')['BPcum'].agg(['min', 'max']).mean(axis=1)
 
     # 2. Publication Style Settings
     plt.rcParams.update({
@@ -164,7 +185,7 @@ def plot_manhattan(merged_df, out_dir):
 
     # 3. Plotting
     colors = ['#808080', '#87CEEB'] # Grey and Skyblue
-    for i, (chrm, group) in enumerate(merged_df.groupby('chr')):
+    for i, (chrm, group) in enumerate(sig_SNPs_df.groupby('chr')):
         ax.scatter(group['BPcum'], group['dom_sig_total'], 
                    c=colors[i % 2], s=12, alpha=0.8, edgecolors='none')
     
@@ -180,14 +201,14 @@ def plot_manhattan(merged_df, out_dir):
     y_ticks = [0, 5, 10, 15, 20]
     ax.set_yticks(y_ticks)
     ax.set_yticklabels([str(y) for y in y_ticks])
-    ax.set_ylim(0 - 0.5, merged_df['dom_sig_total'].max() + 5)
+    ax.set_ylim(0 - 0.5, sig_SNPs_df['dom_sig_total'].max() + 5)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     ax.grid(axis='y', color='gray', linestyle='--', linewidth=0.3, alpha=0.5)
     ax.tick_params(axis='y', labelsize=6)
 
     # X-axis styling
-    max_pos = merged_df['BPcum'].max()
+    max_pos = sig_SNPs_df['BPcum'].max()
     buffer = max_pos * 0.02 
     ax.set_xlim(-buffer, max_pos + buffer)   
     ax.set_xticks(axis_df.values)
@@ -213,7 +234,7 @@ def plot_desc_percentages(desc_file_path, out_dir):
     plot_df = df[(df['chr'] != 'Total') & (df['chr'] != 'X')].copy()
     
     # Calculate percentages
-    all_cols = ['add_sig', 'add_pleiotropy', 'dom_sig', 'dom_pleiotropy', 'dom_pleiotropy_category']
+    all_cols = ['add_sig', 'add_pleiotropy', "add_pleiotropy_category", 'dom_sig', 'dom_pleiotropy', 'dom_pleiotropy_category']
     for col in all_cols:
         plot_df[f'{col}_pct'] = (plot_df[col] / plot_df['QCed variants']) * 100
         
@@ -267,12 +288,156 @@ def plot_desc_percentages(desc_file_path, out_dir):
     plt.close()
 
 
-def plot_pleiotropy_matrix(merged_df, phen_names, out_dir, chromosomes=list(range(1, 23)), bin_size=1_000_000):
-    print("1. Loading trait dictionary...")
-    names_list = pd.read_excel(phen_names, usecols=["phenotype_code", "description", "category"])
-    trait_dict = dict(zip(names_list['phenotype_code'].astype(str), names_list['description']))
-    category_dict = dict(zip(names_list['description'], names_list['category']))
+def plot_combined_figure(sig_SNPs_df, desc_file_path, phen_info_df, out_dir):
     
+    # Prepare Manhattan Dataset (Panel a)
+    sig_SNPs_df = sig_SNPs_df.sort_values(['chr', 'pos'])
+    chr_lengths = sig_SNPs_df.groupby('chr')['pos'].max()
+    offsets = chr_lengths.cumsum().shift(1).fillna(0)
+    sig_SNPs_df['BPcum'] = sig_SNPs_df['pos'] + sig_SNPs_df['chr'].map(offsets)
+    axis_df = sig_SNPs_df.groupby('chr')['BPcum'].agg(['min', 'max']).mean(axis=1)
+
+    # Convert phen_info_df into a dictionary mapping for categories
+    phen_info_df['phenotype_code'] = phen_info_df['phenotype_code'].astype(str).str.strip()
+    code_to_category = dict(zip(phen_info_df['phenotype_code'], phen_info_df['category']))
+
+    def count_unique_categories(traits_str):
+        if pd.isna(traits_str) or not str(traits_str).strip():
+            return 0
+        codes = [c.strip().replace('"', '').replace("'", "") for c in str(traits_str).split(',') if c.strip()]
+        categories = {code_to_category.get(code) for code in codes if code_to_category.get(code) is not None}
+        return len(categories)
+
+    sig_SNPs_df['category_count'] = sig_SNPs_df['sig_dom_traits'].apply(count_unique_categories)
+
+
+    # Prepare Descriptive Dataset (Panels b and c)
+    df = pd.read_excel(desc_file_path)
+    plot_df = df[(df['chr'] != 'Total') & (df['chr'] != 'X')].copy()
+    
+    all_cols = ['add_sig', 'add_pleiotropy', 'add_pleiotropy_category', 
+                'dom_sig', 'dom_pleiotropy', 'dom_pleiotropy_category']
+    for col in all_cols:
+        plot_df[f'{col}_pct'] = (plot_df[col] / plot_df['QCed variants']) * 100
+
+    palette = ["#FF9F1C", "#00A087", "#E64B35", "#4DBBD5", "#7E818D", "#3C5488"]
+    set_style() 
+    fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, ncols=1, figsize=(11, 9), dpi=600)
+    fig.subplots_adjust(hspace=0.45)
+    
+
+    # --- PANEL A: Manhattan Plot ---
+    min_cats = int(sig_SNPs_df['category_count'].min())
+    max_cats = int(sig_SNPs_df['category_count'].max())
+    
+    # Map category counts to point sizes
+    point_sizes = 4 + (sig_SNPs_df['category_count'] * 10)
+
+    # Dictionary to keep track of one handle per color for the chromosome legend
+    chrom_handles = {}
+    
+    for i, (chrm, group) in enumerate(sig_SNPs_df.groupby('chr')):
+        group_sizes = point_sizes.loc[group.index]
+        color = palette[i % len(palette)]
+        
+        scatter = ax1.scatter(group['BPcum'], group['dom_sig_total'], 
+                   c=color, 
+                   s=group_sizes, 
+                   alpha=0.8, edgecolors='none', 
+                   rasterized=True)
+        
+        # Save one instance per color for the chromosome legend
+        if color not in chrom_handles:
+            chrom_handles[color] = plt.Line2D([0], [0], marker='o', color='none',
+                                              markerfacecolor=color, markersize=5, 
+                                              label=f"Chr Group {i+1}")
+
+    # Add Chromosome Color Legend 
+    ax1.legend(handles=list(chrom_handles.values()), loc='upper left', 
+               frameon=False, ncol=3, fontsize=6, title="Chromosomes", title_fontsize=6)
+
+    # Add Size Legend dynamically 
+    sample_counts = [0, 1, 2, 3, 4, 5]
+    size_handles = [
+        plt.Line2D([0], [0], marker='o', color='none', markerfacecolor='gray', alpha=0.6,
+                   markersize=np.sqrt(4 + (count * 7)), 
+                   label=str(count))
+        for count in sample_counts
+    ]
+    
+    # Create the secondary size legend and add it manually to the axes
+    size_legend = ax1.legend(handles=size_handles, bbox_to_anchor=(1.01, 1), loc='upper left',
+                             frameon=False, title="Phenotype\nCategories", title_fontsize=10, fontsize=9)
+    ax1.add_artist(size_legend)
+    
+    ax1.text(1, 0.55, r'$p < 4.72 \times 10^{-11}$', transform=ax1.transAxes, ha='right', fontsize=9)
+    ax1.set_ylabel('Significant Traits (n)')
+    
+    y_ticks = [0, 5, 10, 15, 20, 25]
+    ax1.set_yticks(y_ticks)
+    ax1.set_ylim(-0.5, sig_SNPs_df['dom_sig_total'].max() + 5)
+    ax1.set_xlim(-sig_SNPs_df['BPcum'].max() * 0.02, sig_SNPs_df['BPcum'].max() * 1.02)
+    ax1.set_xticks(axis_df.values)
+    ax1.set_xticklabels(axis_df.index)
+    ax1.spines[['top', 'right']].set_visible(False)
+    ax1.grid(axis='y', color='gray', linestyle='--', linewidth=0.3, alpha=0.5)
+    ax1.text(-0.05, 1.1, 'A.', transform=ax1.transAxes, fontsize=12, fontweight='bold', va='top', ha='right')
+
+
+    # Shared settings for Bar Plots
+    x = np.arange(len(plot_df['chr']))
+    width = 0.25 
+    
+    # --- PANEL B: Dominance ---
+    dom_max = plot_df[['dom_sig_pct', 'dom_pleiotropy_pct', 'dom_pleiotropy_category_pct']].max().max() + 0.02
+    ax2.bar(x - width, plot_df['dom_sig_pct'], width, label='Dom. Sig.', color=palette[0], edgecolor='black', linewidth=0.5)
+    ax2.bar(x, plot_df['dom_pleiotropy_pct'], width, label='Dom. Pleiotropy', color=palette[1], edgecolor='black', linewidth=0.5)
+    ax2.bar(x + width, plot_df['dom_pleiotropy_category_pct'], width, label='Dom. Pleio. Category', color=palette[2], edgecolor='black', linewidth=0.5)
+    
+    ax2.set_ylabel('Variants (%)')
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(plot_df['chr'])
+    ax2.spines[['top', 'right']].set_visible(False)
+    ax2.legend(frameon=False, bbox_to_anchor=(1.01, 1), loc='upper left', fontsize=9)
+    
+    # Calculate text_y for Panel B and add the N= labels here
+    text_y_dom = dom_max * 1.05
+    ax2.vlines(x, ymin=0, ymax=text_y_dom, colors='gray', linestyles='dashed', linewidth=0.5, alpha=0.5, zorder=0)
+    for pos, n in zip(x, plot_df['QCed variants']):
+        ax2.text(pos, text_y_dom, f"N={n:,}", ha='center', va='bottom', fontsize=6, rotation=45)
+        
+    ax2.text(-0.05, 1.1, 'B.', transform=ax2.transAxes, fontsize=12, fontweight='bold', va='top', ha='right')
+
+
+    # --- PANEL C: Additive ---
+    ax3.bar(x - width, plot_df['add_sig_pct'], width, label='Add. Sig.', color=palette[3], edgecolor='black', linewidth=0.5)
+    ax3.bar(x, plot_df['add_pleiotropy_pct'], width, label='Add. Pleiotropy', color=palette[4], edgecolor='black', linewidth=0.5)
+    ax3.bar(x + width, plot_df['add_pleiotropy_category_pct'], width, label='Add. Pleio. Category', color=palette[5], edgecolor='black', linewidth=0.5)
+    
+    ax3.set_ylabel('Variants (%)')
+    ax3.set_xlabel('Chromosome')
+    ax3.set_xticks(x)
+    ax3.set_xticklabels(plot_df['chr'])
+    ax3.spines[['top', 'right']].set_visible(False)
+    ax3.legend(frameon=False, bbox_to_anchor=(1.01, 1), loc='upper left', fontsize=9)
+    
+    # Adjust vlines for Panel C to standard height, removing the N= text loop
+    add_max = plot_df[['add_sig_pct', 'add_pleiotropy_pct', 'add_pleiotropy_category_pct']].max().max() + 0.02
+    ax3.vlines(x, ymin=0, ymax=add_max, colors='gray', linestyles='dashed', linewidth=0.5, alpha=0.5, zorder=0)
+    ax3.text(-0.05, 1.1, 'C.', transform=ax3.transAxes, fontsize=12, fontweight='bold', va='top', ha='right')
+
+
+    output_file = os.path.join(out_dir, "combined_figure.pdf")
+    plt.savefig(output_file, dpi=600, bbox_inches='tight', transparent=False)
+    plt.close()
+    print(f"Combined Nature Genetics formatted plot saved to: {output_file}")
+
+
+def plot_pleiotropy_matrix(merged_df, phen_info_df, out_dir, chromosomes=list(range(1, 23)), bin_size=1_000_000):
+    print("1. Loading trait dictionary...")
+    trait_dict = dict(zip(phen_info_df['phenotype_code'].astype(str), phen_info_df['description']))
+    category_dict = dict(zip(phen_info_df['description'], phen_info_df['category']))
+
     print(f"2. Preparing data for {len(chromosomes)} chromosomes...")
     df = merged_df[merged_df['chr'].isin(chromosomes)].copy()
     
@@ -520,7 +685,8 @@ if __name__ == "__main__":
    
     sig_SNPs_path = "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/significant_SNPs/all_sig_SNPs.tsv.gz"
     output_dir = "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/results"
-    phen_names = "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/phen_dict_renamed.xlsx"
+    phen_codes = "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/phen_dict_renamed.xlsx"
+    phen_categories = "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/supp_table1.tsv"
     desc_file_path = "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/results/SNP_descriptives_plotting.xlsx"
 
 
@@ -528,8 +694,18 @@ if __name__ == "__main__":
                             usecols=["variant", "chr", "pos","rsid", 
                                      "dom_sig_total", "sig_dom_traits"],
                                      dtype={"sig_dom_traits": str})
+    
 
-    plot_manhattan(sig_SNPs_df, output_dir)
-    plot_chromosome_density(sig_SNPs_df, output_dir)
-    plot_pleiotropy_matrix(sig_SNPs_df, phen_names, output_dir)
-    plot_desc_percentages(desc_file_path, output_dir)
+    phen_codes_df = pd.read_excel(phen_codes, usecols=["phenotype_code", "description"])
+    phen_categories_df = pd.read_csv(phen_categories, sep="\t", usecols=["phenotype_code", "category"])
+    phen_info_df = pd.merge(phen_codes_df, phen_categories_df, on="phenotype_code", how="left")
+
+ 
+    # plot_chromosome_density(sig_SNPs_df, output_dir)
+    # plot_manhattan(sig_SNPs_df, output_dir)
+    # plot_desc_percentages(desc_file_path, output_dir)
+    plot_combined_figure(sig_SNPs_df, desc_file_path, phen_info_df,output_dir)
+    #plot_pleiotropy_matrix(sig_SNPs_df, phen_info_df, output_dir)
+    #plot_desc_percentages(desc_file_path, output_dir)
+    
+    
