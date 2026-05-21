@@ -1,46 +1,48 @@
+import json
 import numpy as np
 import pandas as pd
 import scipy.stats as stats
 import matplotlib.pyplot as plt
 
-"""
-    Max absolute dominance beta across all traits: ('30790_irnt', '6:160985526:G:A', 0.39655)
-    Min absolute dominance beta across all traits: ('M13_FIBROBLASTIC', '7:38007174:G:A', 0.00101925)
-    Median SNP heritability across all traits: 0.022
-    Median dominance heritability across all traits: 0.0002367807
-"""
+
+def get_emp_dvals(all_snps_path):
+
+    df = pd.read_csv(
+        all_snps_path, sep="\t", compression="gzip", usecols=["variant", "dom_betas"]
+    )
+
+    parsed_rows = []
+    for row in df.itertuples():
+        betas_dict = json.loads(row.dom_betas)
+        for pheno_code, beta_val in betas_dict.items():
+            parsed_rows.append(
+                {"variant": row.variant, "phenotype_code": pheno_code, "dom_betas": abs(beta_val)}
+            )
+
+    df_long = pd.DataFrame(parsed_rows)
+
+    min_val = df_long["dom_betas"].min()
+    q1_val = df_long["dom_betas"].quantile(0.25)
+    q3_val = df_long["dom_betas"].quantile(0.75)
+    max_val = df_long["dom_betas"].max()
+
+    beta_summary_list = [min_val, q1_val, q3_val, max_val]
+
+    return beta_summary_list
+
+
+all_snps_path = "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/significant_SNPs/all_sig_SNPs.tsv.gz"
 
 # Parameters
 a = 0
-d_values = [0.001, 0.4] 
-h2_d = 0.0002              # Median dominance heritability
+d_values = get_emp_dvals(all_snps_path)
 
 mafs = np.linspace(0.1, 0.5, 21)
 Ns = [10000, 50000, 100000, 200000, 350000]
-iterations = 1000
-
-
-def set_style():
-    """Hardcodes matplotlib parameters to format the plot."""
-    plt.rcParams.update({
-        'font.family': 'sans-serif',
-        'font.sans-serif': ['Arial', 'Helvetica', 'DejaVu Sans'],
-        'font.size': 12,
-        'axes.labelsize': 12,
-        'xtick.labelsize': 8,
-        'ytick.labelsize': 8,
-        'axes.linewidth': 1.0,
-        'axes.spines.top': False,
-        'axes.spines.right': False,
-        'xtick.direction': 'out',
-        'ytick.direction': 'out',
-        'pdf.fonttype': 42,
-        'ps.fonttype': 42
-    })
+iterations = 10
 
 
 def dom_maf_simulation():
-    # Parameters
 
     results = []
 
@@ -51,11 +53,8 @@ def dom_maf_simulation():
                 q = 1 - p
                 prob = [q**2, 2*p*q, p**2]
                 
-                # Calculate Theoretical Broad-Sense Heritability (H2) based on MAF and median h2_d
-                x = ((q - p)**2) / (2 * p * q)
-                H2 = h2_d * (1 + x)
-                
                 pvals = []
+                h2_vals = []
                 for _ in range(iterations):
                     print(f"Running simulation for d={d}, N={N}, MAF={maf:.2f} (Iteration {_+1}/{iterations})")
                     # Simulate Genotypes
@@ -67,15 +66,14 @@ def dom_maf_simulation():
                     y_gen[g == 2] = 2 * a
 
                     # Add Environmental Noise 
+                    var_e = 0.1 
+                    y = y_gen + np.random.normal(0, np.sqrt(var_e), N)
+                    
                     var_g = np.var(y_gen)
                     if var_g == 0: var_g = 1e-10
-                    
-                    var_e = var_g * (1 - H2) / H2
+                    empirical_H2 = var_g / (var_g + var_e)  
+                    h2_vals.append(empirical_H2)
 
-                    # (Safeguard in case var_g is somehow > 1)
-                    if var_e <= 0: var_e = 1e-10 
-
-                    y = y_gen + np.random.normal(0, np.sqrt(var_e), N)
                     
                     # Fit Linear Regression
                     slope, intercept, r_value, p_value, std_err = stats.linregress(g, y)
@@ -95,23 +93,45 @@ def dom_maf_simulation():
                     'N': N,
                     'MAF': maf,
                     'logP': np.mean(pvals),
-                    'Theoretical_H2': H2,     # Your formula's expectation
-                    'Empirical_Var_G': var_g  # What the simulation actually generated
+                    'Emprical_H2': np.mean(h2_vals)    
                 })
 
     df = pd.DataFrame(results)
     df.to_csv('/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/results/dom_simulation_results.tsv', index=False, sep="\t")
 
 
+# plotting the results
+def set_style():
+    """Hardcodes matplotlib parameters to format the plot."""
+    plt.rcParams.update({
+        'font.family': 'sans-serif',
+        'font.sans-serif': ['Arial', 'Helvetica', 'DejaVu Sans'],
+        'font.size': 12,
+        'axes.labelsize': 12,
+        'xtick.labelsize': 8,
+        'ytick.labelsize': 8,
+        'axes.linewidth': 1.0,
+        'axes.spines.top': False,
+        'axes.spines.right': False,
+        'xtick.direction': 'out',
+        'ytick.direction': 'out',
+        'pdf.fonttype': 42,
+        'ps.fonttype': 42
+    })
+
+
 def plot_dom_maf_simulation(df):
     
     set_style()
-    fig, axes = plt.subplots(1, 2, figsize=(10, 5)) # Adjusted for dual panels
+    fig, axes = plt.subplots(2, 2, figsize=(10, 7)) 
+    
+    # Flatten the 2x2 array into a 1D list of 4 axes so it matches the 4 d_values
+    axes_flat = axes.flatten()
 
     colors = plt.cm.viridis(np.linspace(0.1, 0.9, len(Ns)))
-    panels = ['A', 'B']
+    panels = ['A', 'B', "C", "D"]
 
-    for idx, (ax, current_d) in enumerate(zip(axes, d_values)):
+    for idx, (ax, current_d) in enumerate(zip(axes_flat, d_values)):
         subset_d = df[df['d'] == current_d]
         
         for i, N in enumerate(Ns):
@@ -124,12 +144,13 @@ def plot_dom_maf_simulation(df):
         ax.axhline(gwas_sig, color='#7E818D', linestyle='--', linewidth=1, zorder=0)
         
         # Adjusted text position to prevent overlap with data
-        ax.text(0.8, 0.24, r'$p \lesssim 4.72 \times 10^{-11}$', transform=ax.transAxes, 
+        ax.text(0.8, 0.24, r'$p < 4.72 \times 10^{-11}$', transform=ax.transAxes, 
             fontsize=8, ha='left', color='black')
 
-        
-        ax.set_xlabel('Minor Allele Frequency (MAF)')
-        if idx == 0:
+        # Nature Genetics style: outer edges only for axis labels
+        if idx in [2, 3]:
+            ax.set_xlabel('Minor Allele Frequency (MAF)')
+        if idx in [0, 2]:
             ax.set_ylabel(r'Mean $-\log_{10}(P)$ based on Additive Model')
         
         ax.set_title('')
@@ -137,11 +158,16 @@ def plot_dom_maf_simulation(df):
         ax.text(-0.1, 1.05, panels[idx], transform=ax.transAxes, 
                 fontsize=12, fontweight='bold', va='bottom')
 
-    # Only place legend on the right panel to save space
-    axes[1].legend(title='Sample Size (N)', loc='upper left', bbox_to_anchor=(0.8, 1), frameon=False)
+    # Place legend and text box outside the grid on the top right panel (Panel B / index 1)
+    axes_flat[1].legend(title='Sample Size (N)', loc='upper left', bbox_to_anchor=(1.05, 1), frameon=False)
 
-    axes[1].text(1.00, 0.55, f'$\\mathbf{{Panel\\ A}}$:\n  $d={d_values[0]}$\n\n$\\mathbf{{Panel\\ B}}$:\n  $d={d_values[1]}$', 
-                transform=axes[1].transAxes, fontsize=9, va='top', ha='left', color='#333333',
+    # Expanded to include all 4 summary statistics (rounded to 4 decimal places)
+    axes_flat[3].text(1.1, -0.15, 
+                f'$\\mathbf{{Panel\\ A}}$ (Min):\n  $d={d_values[0]:.4f}$\n\n'
+                f'$\\mathbf{{Panel\\ B}}$ (Q1):\n  $d={d_values[1]:.4f}$\n\n'
+                f'$\\mathbf{{Panel\\ C}}$ (Q3):\n  $d={d_values[2]:.4f}$\n\n'
+                f'$\\mathbf{{Panel\\ D}}$ (Max):\n  $d={d_values[3]:.4f}$', 
+                transform=axes_flat[1].transAxes, fontsize=9, va='top', ha='left', color='#333333',
                 bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='#333333', alpha=0.8))
 
     plt.tight_layout()
@@ -151,7 +177,7 @@ def plot_dom_maf_simulation(df):
 
 if __name__ == "__main__":
     # Run the simulation and save results
-    #dom_maf_simulation()
+    dom_maf_simulation()
 
     # Load results and plot
     df_results = pd.read_csv('/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/results/dom_simulation_results.tsv', sep="\t")

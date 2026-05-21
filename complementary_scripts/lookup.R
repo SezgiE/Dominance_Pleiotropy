@@ -9,13 +9,12 @@ library(openxlsx)
 rm(list = setdiff(ls(all.names = TRUE), c("all_sig_df", "clumped_df")))
 
 #  Load the data 
-merged_path <- "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sumstats_QCed/6144_3_sig_SNPs.tsv.bgz"
+merged_path <- "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/significant_SNPs/sig_sumstats_merged/2247_0_sig_SNPs.tsv.bgz"
 coloc_merged <- fread(merged_path)
 
 
 coloc_merged <- coloc_merged %>%
-  filter(dom_sig_total > 1) %>%
-  filter(chr == 6)
+  filter(dom_sig_total > 1)
 
 is_mch <- coloc_merged %>%
   filter(pos >= 25000000) %>%

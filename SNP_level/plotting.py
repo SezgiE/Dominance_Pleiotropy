@@ -391,7 +391,7 @@ def plot_combined_figure(sig_SNPs_df, desc_file_path, phen_info_df, out_dir):
     # --- PANEL B: Dominance ---
     dom_max = plot_df[['dom_sig_pct', 'dom_pleiotropy_pct', 'dom_pleiotropy_category_pct']].max().max() + 0.02
     ax2.bar(x - width, plot_df['dom_sig_pct'], width, label='Dom. Sig.', color=palette[0], edgecolor='black', linewidth=0.5)
-    ax2.bar(x, plot_df['dom_pleiotropy_pct'], width, label='Dom. Pleiotropy', color=palette[1], edgecolor='black', linewidth=0.5)
+    ax2.bar(x, plot_df['dom_pleiotropy_pct'], width, label='Dom. Pleiotropic', color=palette[1], edgecolor='black', linewidth=0.5)
     ax2.bar(x + width, plot_df['dom_pleiotropy_category_pct'], width, label='Dom. Pleio. Category', color=palette[2], edgecolor='black', linewidth=0.5)
     
     ax2.set_ylabel('Variants (%)')
@@ -411,7 +411,7 @@ def plot_combined_figure(sig_SNPs_df, desc_file_path, phen_info_df, out_dir):
 
     # --- PANEL C: Additive ---
     ax3.bar(x - width, plot_df['add_sig_pct'], width, label='Add. Sig.', color=palette[3], edgecolor='black', linewidth=0.5)
-    ax3.bar(x, plot_df['add_pleiotropy_pct'], width, label='Add. Pleiotropy', color=palette[4], edgecolor='black', linewidth=0.5)
+    ax3.bar(x, plot_df['add_pleiotropy_pct'], width, label='Add. Pleiotropic', color=palette[4], edgecolor='black', linewidth=0.5)
     ax3.bar(x + width, plot_df['add_pleiotropy_category_pct'], width, label='Add. Pleio. Category', color=palette[5], edgecolor='black', linewidth=0.5)
     
     ax3.set_ylabel('Variants (%)')
@@ -434,9 +434,20 @@ def plot_combined_figure(sig_SNPs_df, desc_file_path, phen_info_df, out_dir):
 
 
 def plot_pleiotropy_matrix(merged_df, phen_info_df, out_dir, chromosomes=list(range(1, 23)), bin_size=1_000_000):
+    
     print("1. Loading trait dictionary...")
+
+    phenotypes_to_add = [
+        {'phenotype_code': '2247_0', 'description': 'Hearing difficulty/problems: No', 'category': 'Hearing'},
+        {'phenotype_code': '2247_1', 'description': 'Hearing difficulty/problems: Yes', 'category': 'Hearing'}
+    ]
+    
+    new_phenotypes_df = pd.DataFrame(phenotypes_to_add)
+    phen_info_df = pd.concat([phen_info_df, new_phenotypes_df], ignore_index=True)
+    
     trait_dict = dict(zip(phen_info_df['phenotype_code'].astype(str), phen_info_df['description']))
     category_dict = dict(zip(phen_info_df['description'], phen_info_df['category']))
+
 
     print(f"2. Preparing data for {len(chromosomes)} chromosomes...")
     df = merged_df[merged_df['chr'].isin(chromosomes)].copy()
@@ -515,7 +526,7 @@ def plot_pleiotropy_matrix(merged_df, phen_info_df, out_dir, chromosomes=list(ra
     
     # Create dual-panel figure (Top = Density, Bottom = Matrix)
     # Height ratios: Matrix panel is 5 times taller to fit all traits
-    fig, (ax_top, ax_bottom) = plt.subplots(nrows=2, ncols=1, figsize=(7.2, 9), dpi=600, 
+    fig, (ax_top, ax_bottom) = plt.subplots(nrows=2, ncols=1, figsize=(8, 9), dpi=600, 
                                             sharex=True, gridspec_kw={'height_ratios': [1, 20]})
 
     fig.subplots_adjust(hspace=0.05) # Bring panels very close together
@@ -588,8 +599,8 @@ def plot_pleiotropy_matrix(merged_df, phen_info_df, out_dir, chromosomes=list(ra
 
     #create a color palette for categories
     unique_categories = unique_traits_df['category'].unique()
-    custom_palette = ["#3C5488", '#DC0000','#00A087',"#89603D",'#8491B4', '#91D1C2',
-                       '#631879',"#B09C85",'#00A05B',"#E64B35","#C59316", '#4DBBD5']
+    custom_palette = ["#3C5488", '#DC0000','#00A087',"#89603D",'#91D1C2',"#DBC505",
+                       "#B09C85",'#00A05B',"#8491B4", '#631879',"#E64B35","#C59316", '#4DBBD5']
     
     # 3. Apply the 70% opacity to all colors at once
     new_palette = [mcolors.to_rgba(c, alpha=1) for c in custom_palette]
@@ -704,8 +715,8 @@ if __name__ == "__main__":
     # plot_chromosome_density(sig_SNPs_df, output_dir)
     # plot_manhattan(sig_SNPs_df, output_dir)
     # plot_desc_percentages(desc_file_path, output_dir)
-    plot_combined_figure(sig_SNPs_df, desc_file_path, phen_info_df,output_dir)
-    #plot_pleiotropy_matrix(sig_SNPs_df, phen_info_df, output_dir)
+    #plot_combined_figure(sig_SNPs_df, desc_file_path, phen_info_df,output_dir)
+    plot_pleiotropy_matrix(sig_SNPs_df, phen_info_df, output_dir)
     #plot_desc_percentages(desc_file_path, output_dir)
     
     
