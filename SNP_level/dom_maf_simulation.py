@@ -1,8 +1,11 @@
 import json
 import numpy as np
+import seaborn as sns
 import pandas as pd
 import scipy.stats as stats
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.patches import Patch
 
 
 def get_emp_dvals(all_snps_path):
@@ -35,11 +38,12 @@ all_snps_path = "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/significa
 
 # Parameters
 a = 0
-d_values = get_emp_dvals(all_snps_path)
+#d_values = get_emp_dvals(all_snps_path)
+d_values = np.linspace(0, 0.5, 11)
 
 mafs = np.linspace(0.1, 0.5, 21)
-Ns = [10000, 50000, 100000, 200000, 350000]
-iterations = 10
+Ns = [10000, 50000, 100000, 500000]
+iterations = 100
 
 
 def dom_maf_simulation():
@@ -52,6 +56,9 @@ def dom_maf_simulation():
                 p = maf
                 q = 1 - p
                 prob = [q**2, 2*p*q, p**2]
+                
+                v_g_theoretical = (2*p*q*(a+d*(q-p))**2) + ((2*p*q*d)**2)
+                var_e = 1 - v_g_theoretical
                 
                 pvals = []
                 h2_vals = []
@@ -66,30 +73,39 @@ def dom_maf_simulation():
                     y_gen[g == 2] = 2 * a
 
                     # Add Environmental Noise 
-                    var_e = 0.1 
-                    y = y_gen + np.random.normal(0, np.sqrt(var_e), N)
+                    y_raw = y_gen + np.random.normal(0, np.sqrt(var_e), N)
+                    y = (y_raw - np.mean(y_raw)) / np.std(y_raw)
                     
                     var_g = np.var(y_gen)
                     if var_g == 0: var_g = 1e-10
                     empirical_H2 = var_g / (var_g + var_e)  
                     h2_vals.append(empirical_H2)
-
                     
                     # Fit Linear Regression
                     slope, intercept, r_value, p_value, std_err = stats.linregress(g, y)
+
+                    if q == p: 
+                        std_d = 0
+                    else:
+                        std_d = slope / (q - p)
                     
                     #  -log10(p-value) using the t-statistic
                     t_stat = slope / std_err if std_err > 0 else 0
                     if t_stat == 0:
                         log10_p = 0
                     else:
-                        log_p_base_e = stats.t.logsf(np.abs(t_stat), df=N-2)
+                        log_p_base_e = stats.norm.logsf(np.abs(t_stat))
                         log10_p = - (np.log10(2) + log_p_base_e / np.log(10))
+                        
+                        # if it hits inf, cap it at 300
+                        if np.isinf(log10_p):
+                            log10_p = 300
                     
                     pvals.append(log10_p)
                     
                 results.append({
                     "d": d,
+                    "std_d": std_d,
                     'N': N,
                     'MAF': maf,
                     'logP': np.mean(pvals),
@@ -108,8 +124,8 @@ def set_style():
         'font.sans-serif': ['Arial', 'Helvetica', 'DejaVu Sans'],
         'font.size': 12,
         'axes.labelsize': 12,
-        'xtick.labelsize': 8,
-        'ytick.labelsize': 8,
+        'xtick.labelsize': 10,
+        'ytick.labelsize': 10,
         'axes.linewidth': 1.0,
         'axes.spines.top': False,
         'axes.spines.right': False,
@@ -118,6 +134,56 @@ def set_style():
         'pdf.fonttype': 42,
         'ps.fonttype': 42
     })
+
+
+def plot_3d(df):
+    set_style()
+    df = df[df['logP'] < 250]
+    
+    fig = plt.figure(figsize=(9, 7))
+    ax = fig.add_subplot(111, projection='3d')
+    
+    # Select a subset of Ns to prevent complete occlusion
+    Ns_to_plot = [10000, 50000, 100000, 500000]
+    colors = ['#440154', '#31688e', '#35b779', '#fde725']
+    
+    for N, color in zip(Ns_to_plot, colors):
+        sub_df = df[df['N'] == N]
+        
+        # Pivot data to create a 2D matrix for the Z-axis
+        Z_matrix = sub_df.pivot(index='d', columns='MAF', values='logP').values
+        
+        # Create X and Y meshgrids
+        X, Y = np.meshgrid(sub_df['MAF'].unique(), sub_df['d'].unique())
+        
+        # Plot the surface
+        ax.plot_surface(X, Y, Z_matrix, color=color, alpha=0.6, 
+                        edgecolor='k', linewidth=0.3, antialiased=True)
+        
+    ax.tick_params(axis='x', pad=2)  # Distance for MAF numbers
+    ax.tick_params(axis='y', pad=2)  # Distance for d numbers
+    ax.tick_params(axis='z', pad=2)  # Distance for logP numbers
+
+    ax.set_xlabel('Minor Allele Frequency (MAF)', labelpad=7)
+    ax.set_ylabel('Dominance Effect Size (d)', labelpad=7)
+    ax.zaxis.set_rotate_label(False)
+    ax.set_zlabel('Mean $-log_{10}(P)$', labelpad=6, rotation=90)
+    
+    # Add a custom legend
+    legend_elements = [Patch(facecolor=c, edgecolor='k', alpha=0.6, label=f'N = {n:,}') 
+                       for c, n in zip(colors, Ns_to_plot)]
+    
+    ax.legend(handles=legend_elements, loc='upper center', 
+              bbox_to_anchor=(0.5, -0.18), frameon=False, 
+              ncol=len(Ns_to_plot),
+              fontsize=10)
+    
+    #(Elevation, Azimuth)
+    ax.view_init(elev=25, azim=-135)
+    ax.set_box_aspect(None, zoom=1.3)
+    
+    plt.tight_layout()
+    plt.savefig('/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/results/dom_sim_plot.pdf')
 
 
 def plot_dom_maf_simulation(df):
@@ -181,4 +247,5 @@ if __name__ == "__main__":
 
     # Load results and plot
     df_results = pd.read_csv('/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/results/dom_simulation_results.tsv', sep="\t")
-    plot_dom_maf_simulation(df_results)
+    #plot_dom_maf_simulation(df_results)
+    plot_3d(df_results)

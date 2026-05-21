@@ -5,7 +5,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import matplotlib.patches as mpatches
+from matplotlib.legend_handler import HandlerTuple
 from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
+
 
 
 def get_data(phen_code, sumstat_dir, loci_dir, susie_dir):
@@ -128,13 +130,13 @@ def plot_regional_association(plot_df, genes_df, susie_df, phen_code, phen_name,
     ncols = 2  # Set to 1 for a single vertical column, 2 or 3 for a grid
     nrows = int(np.ceil(n_blocks / ncols))
 
-    # Scale the figure size dynamically. 
+    # Scale the figure size
     fig = plt.figure(figsize=(6.5 * ncols, 6.5 * nrows))
     
-    # Create the master grid. wspace=0.7 guarantees your custom right-side legends won't overlap the next column!
+    # Create the master grid.
     master_gs = GridSpec(nrows, ncols, figure=fig, wspace=0.6, hspace=0.4)
 
-    # Loop through each master locus and generate a subplot
+    # Loop through locus and generate a subplot
     for idx, block in enumerate(unique_blocks):
         print(f"Plotting locus: {block}")
         
@@ -157,7 +159,7 @@ def plot_regional_association(plot_df, genes_df, susie_df, phen_code, phen_name,
         ].copy()
         
 
-        # SNPs not in locus_data will get NaN, which we fill with -1 (for background grey)
+        # SNPs not in locus_data will get NaN
         window_df['r4'] = window_df['r4'].fillna(-1)
 
         window_genes = genes_df[
@@ -169,7 +171,7 @@ def plot_regional_association(plot_df, genes_df, susie_df, phen_code, phen_name,
         row_idx = idx // ncols
         col_idx = idx % ncols
 
-        # Create your 3:1 nested GridSpec exactly inside this specific grid cell
+        # 3:1 nested GridSpec
         gs_inner = GridSpecFromSubplotSpec(3, 1, subplot_spec=master_gs[row_idx, col_idx], 
                                     height_ratios=[3, 1.5, 0.75], hspace=0.2)
         
@@ -178,7 +180,7 @@ def plot_regional_association(plot_df, genes_df, susie_df, phen_code, phen_name,
         ax_gene = fig.add_subplot(gs_inner[2], sharex=ax_main)
 
 
-        # Define standard LocusZoom Color Mapping
+        # Define Color Mapping
         colors = []
         for r4 in window_df['r4']:
             if r4 >= 0.9: colors.append('#D43F3A')      # Red
@@ -190,14 +192,14 @@ def plot_regional_association(plot_df, genes_df, susie_df, phen_code, phen_name,
 
         window_df['color'] = colors
         
-        # Sort so the highest correlation SNPs are drawn ON TOP of the grey background
+        # 
         window_df = window_df.sort_values('r4', ascending=False)
         window_df = window_df.drop_duplicates(subset=['variant'], keep='first')
 
         # Plot Background and Proxies
         scatter_df = window_df[(window_df['indep_status'] != True) & (window_df['lead_status'] != True)]
         ax_main.scatter(
-            scatter_df['pos'] / 1e6, # Convert to Megabases for clean X-axis labels
+            scatter_df['pos'] / 1e6, # Convert to Megabases
             scatter_df['-log10_plotting'],
             c=scatter_df['color'],
             edgecolors='white',
@@ -231,7 +233,7 @@ def plot_regional_association(plot_df, genes_df, susie_df, phen_code, phen_name,
                 fontsize=6,
                 fontstyle='italic',
                 color='black',
-                zorder=4         # Keep text on the very top layer
+                zorder=4         
             )
 
         
@@ -273,71 +275,91 @@ def plot_regional_association(plot_df, genes_df, susie_df, phen_code, phen_name,
                             zorder=5
                         )
 
-        # 8. Formatting the Axes
+        # Formatting the Axes
         ax_main.set_ylabel(r'$-\log_{10}(P)$', fontweight='bold')
         ax_main.set_xlim(plot_start / 1e6, plot_end / 1e6)
         
         # Add the genome-wide significance line
         ax_main.axhline(-np.log10((5e-8)/1060), color='black', linestyle='--', linewidth=0.8, zorder=1)
 
-        # 9. Custom LD Legend
+        # LD Legend
+        lead_color = '#9400D3'
+        
+        # Base Legend (Colors + Lead SNP)
         ld_legend = [
-            mpatches.Patch(color='#D43F3A', label=r'$r^4 \geq 0.9$'),
-            mpatches.Patch(color='#EEA236', label=r'$0.8 \leq r^4 < 0.9$'),
-            mpatches.Patch(color='#5CB85C', label=r'$0.7 \leq r^4 < 0.8$'),
-            mpatches.Patch(color='#5BC0DE', label=r'$0.6 \leq r^4 < 0.7$'),
-            mpatches.Patch(color='#357EBD', label=r'$0.0 \leq r^4 < 0.6$'),
-            mpatches.Patch(color='none', label=' '),mpatches.Patch(color='none', label=' '),
-            mpatches.Patch(color='none', label=' '),mpatches.Patch(color='none', label=' '),
-            mpatches.Patch(color='none', label=' '),mpatches.Patch(color='none', label=' '),
-            mpatches.Patch(color='none', label=' '),mpatches.Patch(color='none', label=' '),
-            plt.Line2D([0], [0], color='black', linestyle='--', linewidth=0.8, 
-                       label=r'$P \approx 4.7 \times 10^{-11}$'),
-            mpatches.Patch(color='none', label=' ')
+            mpatches.Patch(color='#D43F3A', label=r'$r_D^2 \geq 0.9$'),
+            mpatches.Patch(color='#EEA236', label=r'$0.8 \leq r_D^2 < 0.9$'),
+            mpatches.Patch(color='#5CB85C', label=r'$0.7 \leq r_D^2 < 0.8$'),
+            mpatches.Patch(color='#5BC0DE', label=r'$0.6 \leq r_D^2 < 0.7$'),
+            mpatches.Patch(color='#357EBD', label=r'$0.0 \leq r_D^2 < 0.6$'),
+            
+            mpatches.Patch(color='none', label=' '),
+            plt.Line2D([0], [0], marker='D', color='w', markerfacecolor=lead_color, 
+                       markeredgecolor='black', markersize=5, label='Lead SNP')
+
         ]
 
+        # Independent SNPs (Triangles) only if they exist in this plot
+        if not indep_row.empty:
+            ld_legend.extend([
+                plt.Line2D([0], [0], marker='^', color='w', markerfacecolor=lead_color, 
+                       markeredgecolor='black', markersize=5, label='Independent SNP'),
+
+                mpatches.Patch(color='none', label=' '),
+
+                mpatches.Patch(color='none', label="LD to Lead SNP")
+            ])
+            
+            spacer = plt.Line2D([0], [0], marker='none', color='none')
+            
+            t1 = plt.Line2D([0], [0], marker='^', linestyle='none', 
+                            markerfacecolor=lighten_color(lead_color, amount=0.8), markeredgecolor='black', markersize=6)
+            t2 = plt.Line2D([0], [0], marker='^', linestyle='none', 
+                            markerfacecolor=lighten_color(lead_color, amount=0.5), markeredgecolor='black', markersize=6)
+            t3 = plt.Line2D([0], [0], marker='^', linestyle='none', 
+                            markerfacecolor=lighten_color(lead_color, amount=0.2), markeredgecolor='black', markersize=6)
+            
+            ld_legend.extend([
+                (spacer, spacer,spacer, spacer, t1, t2, t3) 
+            ])
+
+            ld_legend.extend([
+            mpatches.Patch(color='none', label=r'$0.1 \leq r_D^2 < 0.6$')
+        ])
+
+        # Append the Threshold Line
+        ld_legend.extend([
+            mpatches.Patch(color='none', label=' '), 
+            plt.Line2D([0], [0], color='black', linestyle='--', linewidth=0.8, 
+                       label=r'$P \approx 4.7 \times 10^{-11}$'),
+        ])
+        
+        # Append the Star (if compressed)
         max_pval = window_df['dom_log10_pval'].max()
         if max_pval > 300:
             ld_legend.append(
                 plt.Line2D([0], [0], marker='*', color='w', markerfacecolor='#780505', 
-                           markeredgecolor='#780505', markersize=5, 
-                           label=f'$-\\log_{{10}}(P) = {max_pval:.0f}$')
+                           markeredgecolor='#780505', markersize=6, 
+                           label=f'Max $-\\log_{{10}}(P) = {max_pval:.0f}$')
             )
 
+        # Draw the Legend
+        ld_labels = [h.get_label() if not isinstance(h, tuple) else h[0].get_label() for h in ld_legend]
 
-        if indep_row.empty:
-            ld_title = "LD to Lead SNP"
+        ax_main.legend(
+            handles=ld_legend,
+            labels=ld_labels,       
+            loc='upper left',
+            bbox_to_anchor=(1.05, 1), 
+            frameon=False,
+            title='LD to Independent SNP' if not indep_row.empty else 'LD to Lead SNP',
+            fontsize=6,
+            title_fontsize=7,
+            handlelength=1.2,
+            labelspacing=0.5,
+            handler_map={tuple: HandlerTuple(ndivide=None, pad=16)} 
+        )
 
-        elif not indep_row.empty:
-            ld_title = 'LD to Independent SNP'
-
-            # Lead SNP color legend
-            cmap_colors = [
-                lighten_color(lead_color, amount=0.8), 
-                lighten_color(lead_color, amount=0.5), 
-                lighten_color(lead_color, amount=0.2)
-                ]
-            custom_cmap = mcolors.LinearSegmentedColormap.from_list("indep_purple", cmap_colors)
-
-            cax = ax_main.inset_axes([1.077, 0.41, 0.0475, 0.029]) 
-            
-            norm = mcolors.Normalize(vmin=0.01, vmax=0.30) 
-            cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=custom_cmap),
-                            cax=cax, orientation='horizontal')
-            cb.set_ticks([])
-            cb.outline.set_linewidth(0)
-            cax.text(1.3, 0.5, r'$0.1 \leq r^4 < 0.6$', size=6, 
-                    transform=cax.transAxes, ha='left', va='center')
-            cax.text(-0.18, 1.8, 'LD to Lead SNP', fontsize=7, 
-                    transform=cax.transAxes, ha='left', va='bottom')
-
-
-        ax_main.legend( handles=ld_legend,loc='upper left',
-                bbox_to_anchor=(1.05, 1),frameon=False,
-                title=ld_title,
-                fontsize=6,
-                title_fontsize=7
-                )
 
         plt.setp(ax_main.get_xticklabels(), visible=False)
         y_levels = [0, 1, 2, 3]
@@ -348,7 +370,7 @@ def plot_regional_association(plot_df, genes_df, susie_df, phen_code, phen_name,
         pip_df['abs_z'] = pip_df['dom_z_score'].abs()
         pip_df = pip_df.sort_values('abs_z', ascending=False)
 
-        # Plot Background SNPs (Not in a CS)
+        # Background SNPs (Not in a CS)
         bg_cs_mask = (pip_df['CS'] == 0) | (pip_df['CS'].isna())
         ax_pip.scatter(
             pip_df.loc[bg_cs_mask, 'pos'] / 1e6,  # Still using the jittered X
@@ -356,7 +378,7 @@ def plot_regional_association(plot_df, genes_df, susie_df, phen_code, phen_name,
             c='#357EBD', edgecolors='white', linewidths=0.1, s=20, alpha=0.9, zorder=2
         )
 
-        # Assign high-contrast colors to each Credible Set
+        # colors to each Credible Set
         cs_colors = [
             '#E41A1C',
             '#377EB8',
@@ -402,7 +424,7 @@ def plot_regional_association(plot_df, genes_df, susie_df, phen_code, phen_name,
                 loc='upper left',
                 bbox_to_anchor=(1.05, 1), 
                 frameon=False,
-                title='Credible Sets (Top PIP)',
+                title='Credible Sets (Top SNP)',
                 fontsize=5,
                 title_fontsize=7,
                 labelspacing=0.5,
@@ -449,15 +471,13 @@ def plot_regional_association(plot_df, genes_df, susie_df, phen_code, phen_name,
         ax_gene.ticklabel_format(useOffset=False, style='plain', axis='x')
 
 
-    # 10. Save as vector PDF
+    # Save
     fig.suptitle(f"Phenotype: {phen_name}", x=0.05, y=0.98, ha='left', fontsize=14, fontweight='bold')
     
-    # Push the entire grid down slightly to make room for the header
     plt.subplots_adjust(top=0.92)
 
     output_file = os.path.join(output_dir, f'l_plot_{phen_code}.pdf')
 
-    # Notice tight_layout() is removed! bbox_inches='tight' handles it perfectly.
     plt.savefig(output_file, dpi=600, bbox_inches='tight')
     plt.close()
     
@@ -471,7 +491,7 @@ if __name__ == "__main__":
     gene_bed_path = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/ld_info/human_genes_hg19.bed"
     loci_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sig_loci"
     susie_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results"
-    out_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/loci_plots"
+    out_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/loci_results/loci_plots"
 
     traits = pd.read_excel(phen_dict_path, usecols=["phenotype_code", "description"])
     #traits = traits[traits["phenotype_code"] == "1747_2"]
@@ -490,7 +510,6 @@ if __name__ == "__main__":
                 continue
                 
         except FileNotFoundError:
-            # Skip to the next phenotype if the file/dir doesn't exist
             print(f"No significant loci data for{phen_code} ")
             continue
         

@@ -9,7 +9,7 @@ library(openxlsx)
 rm(list = setdiff(ls(all.names = TRUE), c("all_sig_df", "clumped_df")))
 
 #  Load the data 
-merged_path <- "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/significant_SNPs/sig_sumstats_merged/2247_0_sig_SNPs.tsv.bgz"
+merged_path <- "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/significant_SNPs/all_sig_SNPs.tsv.gz"
 coloc_merged <- fread(merged_path)
 
 

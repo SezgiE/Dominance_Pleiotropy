@@ -155,13 +155,12 @@ def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset
     print("[*] Generating UpSet plot...")
     os.makedirs(out_dir, exist_ok=True)
 
-    # UPDATED: Define plot size with increased height for both panels
     set_style2()
-    fig_size = (18, 9.5) 
+    fig_size = (15, 8) 
     fig = plt.figure(figsize=fig_size)
     
-    # NEW: Split the figure into Top (UpSet) and Bottom (Histogram)
-    subfigs = fig.subfigures(2, 1, height_ratios=[3, 1], hspace=0)
+    #subfigs = fig.subfigures(2, 1, height_ratios=[3, 1], hspace=0)
+    #subfigs = fig.subfigures(1, 1, hspace=0)
 
     # Initialize UpSet
     upset = us.UpSet(
@@ -176,11 +175,10 @@ def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset
 
     upset.add_stacked_bars(by='Consequence', colors='tab20', title="Variant Count", elements=4)
     
-    # UPDATED: Pass ONLY the top subfigure to the upset plot
-    axes_dict = upset.plot(fig=subfigs[0])
+    #axes_dict = upset.plot(fig=subfigs[0])
+    axes_dict = upset.plot(fig=fig)
 
-    # NEW: Add 'a' label for Nature Genetics
-    subfigs[0].text(0.1, 0.95, 'A.', fontsize=14, fontweight='bold', family='Arial')
+    #subfigs[0].text(0.1, 0.95, 'A.', fontsize=14, fontweight='bold', family='Arial')
     
     consequence_colors = {'Non coding transcript exon variant': "#b0a234",
         'Non coding transcript variant': "#1697a0"}
@@ -210,7 +208,7 @@ def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset
                     handles, 
                     labels, 
                     loc='upper left', 
-                    bbox_to_anchor=(-0.37, 1.3), 
+                    bbox_to_anchor=(-0.37, 1.1), 
                     fontsize=8,
                     labelspacing=0.5,   
                     frameon=True,
@@ -230,7 +228,7 @@ def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset
                             fontsize=8, fontweight='bold')
 
 
-    # NEW: --- PANEL B: Histogram of SNPs per Consequence ---
+    """# --- PANEL B: Histogram of SNPs per Consequence ---
     ax_hist = subfigs[1].subplots()
     subfigs[1].text(0.1, 0.98, 'B.', fontsize=14, fontweight='bold', family='Arial')
     
@@ -241,21 +239,21 @@ def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset
     cleaned_consq = exploded_consq.apply(format_consequence)
     canonical_consq_counts = cleaned_consq.value_counts().sort_index()
     
-    # 6. Count instances and sort alphabetically
+    # Count instances and sort alphabetically
     bar_colors = [consequence_colors.get(consequence, '#bdc3c7') for consequence in canonical_consq_counts.index]
     
     # Plot the histogram
     bars = ax_hist.bar(canonical_consq_counts.index, canonical_consq_counts.values, 
                        color=bar_colors, edgecolor='black', linewidth=0.5)
     
-    # Style Panel B for publication
+    # Style Panel B
     ax_hist.set_ylabel('Total Consequences (N)', family='Arial', fontsize=12)
     ax_hist.tick_params(axis='x', rotation=30, labelsize=10)
     ax_hist.tick_params(axis='y', labelsize=8)
     ax_hist.spines['top'].set_visible(False)
-    ax_hist.spines['right'].set_visible(False)
+    ax_hist.spines['right'].set_visible(False)"""
     
-    # Save plot with tight bbox to prevent cutoff of trait names
+    # Save plot with
     out_path = os.path.join(out_dir, filename)
     plt.savefig(out_path, bbox_inches='tight', dpi=600) 
     plt.close(fig) 
@@ -351,6 +349,17 @@ def snp_3D_plot(result_df_path, output_path):
     ax.set_yticklabels([])
     ax.xaxis.pane.fill = ax.yaxis.pane.fill = ax.zaxis.pane.fill = False
     ax.view_init(elev=20, azim=38)
+
+    # Cube color
+    pane_color = (0.95, 0.95, 0.95, 1.0)  # Light grey (RGBA)
+    
+    ax.xaxis.pane.fill = True
+    ax.yaxis.pane.fill = True
+    ax.zaxis.pane.fill = True
+    
+    ax.xaxis.pane.set_facecolor(pane_color)
+    ax.yaxis.pane.set_facecolor(pane_color)
+    ax.zaxis.pane.set_facecolor(pane_color)
     
     # Panel C Label
     ax.text2D(-0.05, 1.042, 'C.', transform=ax.transAxes, fontsize=16, fontweight='bold', va='top')
@@ -461,8 +470,8 @@ def plot_effect_direction(df_path, all_snps_df, output_filename):
     # Text annotations (dynamically placed at the end of the X-axis)
     label_x = len(snp_stats) - 5
     ax_B.text(label_x, 0.05, 'Additive', color='black', fontsize=9, va='bottom', ha='right')
-    ax_B.text(label_x, 1.05, 'Complete Dominance', color='#505050', fontsize=9, va='bottom', ha='right')
-    ax_B.text(label_x, -0.95, 'Complete Recessiveness', color='#505050', fontsize=9, va='bottom', ha='right')
+    ax_B.text(label_x, 1.05, 'Dominant', color='#505050', fontsize=9, va='bottom', ha='right')
+    ax_B.text(label_x, -0.95, 'Recessive', color='#505050', fontsize=9, va='bottom', ha='right')
 
     # Add label
     ax_B.text(-0.1, 1.08, 'B.', transform=ax_B.transAxes, fontsize=14, fontweight='bold', va='top')
@@ -546,6 +555,6 @@ if __name__ == "__main__":
     coloc_snps_info = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/coloc_results/coloc_snp_info.tsv"
     out_dir="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/loci_results" 
 
-    upset_plot(coloc_snps, f"{out_dir}/vep_res.txt", out_dir)
+    #upset_plot(coloc_snps, f"{out_dir}/vep_res.txt", out_dir)
     snp_3D_plot(coloc_snps_info, f"{out_dir}/snp_maf.pdf")
-    plot_effect_direction(coloc_snps_info, all_snps_df, f"{out_dir}/snps_effect_direction.pdf")
+    #plot_effect_direction(coloc_snps_info, all_snps_df, f"{out_dir}/snps_effect_direction.pdf")
