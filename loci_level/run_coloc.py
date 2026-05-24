@@ -285,7 +285,7 @@ if __name__ == "__main__":
     # Define paths
     r_script_path = "/Users/sezgi/Documents/dominance_pleiotropy/scripts/loci_level/run_coloc_core.R"
     data_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/susie_results/susie_raw_files/"
-    phen_info_path = "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/phen_dict_renamed.xlsx"
+    phen_info_path = "/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/phen_dict.xlsx"
     out_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/coloc_results/results_by_phenotype"
 
     # Read phenotype information

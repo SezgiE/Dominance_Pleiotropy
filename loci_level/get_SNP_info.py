@@ -51,7 +51,7 @@ def get_snp_info(snp, phen_code, sumstats_dir):
 if __name__ == "__main__":
 
     sumstats_dir = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/sumstats_QCed"
-    trait_info = pd.read_excel("/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/phen_dict_renamed.xlsx", 
+    trait_info = pd.read_excel("/Users/sezgi/Documents/dominance_pleiotropy/UKB_sumstats_Neale/phen_dict.xlsx", 
                         usecols=["phenotype_code", "description", "category"]
                         )
 

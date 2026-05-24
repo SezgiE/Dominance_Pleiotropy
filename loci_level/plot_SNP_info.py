@@ -416,7 +416,7 @@ def plot_effect_direction(df_path, all_snps_df, output_filename):
     set_style()
     fig, (ax_A, ax_B, ax_C) = plt.subplots(
         nrows=3, ncols=1, figsize=(10, 7), sharex=True, 
-        gridspec_kw={'height_ratios': [0.75, 2.5, 1.25]} # Middle panel stays the largest
+        gridspec_kw={'height_ratios': [0.75, 1.25, 2.5]} # Middle panel stays the largest
     )
     colors_palette = ['#3C5488', '#E64B35', '#4DBBD5', '#00A087', '#7E818D']
     plt.subplots_adjust(hspace=0.3)
@@ -427,7 +427,7 @@ def plot_effect_direction(df_path, all_snps_df, output_filename):
     # PANEL A: Grouped Bar Chart for Trait Counts
     # ==========================================
     ratio_colors = np.where(snp_stats['sig_ratio'] >= 1, '#00A087', '#FF9F1C')
-    
+    print(len(snp_stats[snp_stats['sig_ratio'] >= 1]))
     ax_A.bar(
         x_pos, 
         snp_stats['sig_ratio'], 
@@ -447,67 +447,67 @@ def plot_effect_direction(df_path, all_snps_df, output_filename):
 
 
     # ==========================================
-    # PANEL B: Dominance Ratio Variance
-    # ==========================================
-    
-    bar_colors = np.where((snp_stats['min'] < 0) & (snp_stats['max'] > 0), "#E64B35", '#3C5488')
-
-    ax_B.vlines(
-        x=x_pos, ymin=snp_stats['min'], ymax=snp_stats['max'], 
-        color=bar_colors, linewidth=1, alpha=0.5, zorder=1
-    )
-
-    ax_B.scatter(
-        x=x_pos, y=snp_stats['median'], 
-        color='#3C5488', s=15, edgecolors='none', alpha=1.0, zorder=2
-    )
-
-    # Reference lines
-    ax_B.axhline(0, color='black', linewidth=1.0, linestyle='-', zorder=0)
-    ax_B.axhline(1, color='#A0A0A0', linewidth=0.8, linestyle='--', zorder=0)
-    ax_B.axhline(-1, color='#A0A0A0', linewidth=0.8, linestyle='--', zorder=0)
-    
-    # Text annotations (dynamically placed at the end of the X-axis)
-    label_x = len(snp_stats) - 5
-    ax_B.text(label_x, 0.05, 'Additive', color='black', fontsize=9, va='bottom', ha='right')
-    ax_B.text(label_x, 1.05, 'Dominant', color='#505050', fontsize=9, va='bottom', ha='right')
-    ax_B.text(label_x, -0.95, 'Recessive', color='#505050', fontsize=9, va='bottom', ha='right')
-
-    # Add label
-    ax_B.text(-0.1, 1.08, 'B.', transform=ax_B.transAxes, fontsize=14, fontweight='bold', va='top')
-
-    # Format Axes
-    ax_B.set_xticks([]) 
-    ax_B.set_xlim(-2, len(snp_stats) + 2) 
-    ax_B.set_ylabel(r'Dominance Ratio ($\beta_{dom} / \beta_{add}$)', labelpad=10)
-    ax_B.set_ylim(-2.2, 2.2)
-
-
-    # ==========================================
     # PANEL C: Total Additive Traits
     # ==========================================
     
-    ax_C.bar(
+    ax_B.bar(
         x_pos, snp_stats['add_sig_total'], width=0.7, color='#4DBBD5', 
         edgecolor='black', linewidth=0.2, alpha=1.0, zorder=2, label = "Additive"
     )
 
-    ax_C.bar(
+    ax_B.bar(
         x_pos+0.1, snp_stats['dom_sig_count'], 
         width=0.5, color='#E64B35', alpha=0.8, 
         edgecolor='black', linewidth=0.2, label='Dominant', zorder=3
     )
     
-    ax_C.axhline(0, color='black', linewidth=1.0, zorder=1)
-    ax_C.set_ylabel('Total Trait\nCount', labelpad=10)
-    ax_C.legend(frameon=False, loc='upper left', fontsize=10)
-    ax_C.set_ylim(0, 61)
-    ax_C.set_yticks([0, 20, 40, 60])
+    ax_B.axhline(0, color='black', linewidth=1.0, zorder=1)
+    ax_B.set_ylabel('Total Trait\nCount', labelpad=10)
+    ax_B.legend(frameon=False, loc='upper left', fontsize=10)
+    ax_B.set_ylim(0, 61)
+    ax_B.set_yticks([0, 20, 40, 60])
 
-    ax_C.grid(axis='y', color='#D0D0D0', linestyle='--', linewidth=0.8, zorder=0)
-    ax_C.spines['bottom'].set_visible(False)
-    ax_C.tick_params(axis='x', length=0)
-    ax_C.text(-0.1, 1.2, 'C.', transform=ax_C.transAxes, fontsize=14, fontweight='bold', va='top')
+    ax_B.grid(axis='y', color='#D0D0D0', linestyle='--', linewidth=0.8, zorder=0)
+    ax_B.spines['bottom'].set_visible(False)
+    ax_B.tick_params(axis='x', length=0)
+    ax_B.text(-0.1, 1.2, 'B.', transform=ax_B.transAxes, fontsize=14, fontweight='bold', va='top')
+
+
+    # ==========================================
+    # PANEL C: Dominance Ratio Variance
+    # ==========================================
+    
+    bar_colors = np.where((snp_stats['min'] < 0) & (snp_stats['max'] > 0), "#E64B35", '#3C5488')
+
+    ax_C.vlines(
+        x=x_pos, ymin=snp_stats['min'], ymax=snp_stats['max'], 
+        color=bar_colors, linewidth=1, alpha=0.5, zorder=1
+    )
+
+    ax_C.scatter(
+        x=x_pos, y=snp_stats['median'], 
+        color='#3C5488', s=15, edgecolors='none', alpha=1.0, zorder=2
+    )
+
+    # Reference lines
+    ax_C.axhline(0, color='black', linewidth=1.0, linestyle='-', zorder=0)
+    ax_C.axhline(1, color='#A0A0A0', linewidth=0.8, linestyle='--', zorder=0)
+    ax_C.axhline(-1, color='#A0A0A0', linewidth=0.8, linestyle='--', zorder=0)
+    
+    # Text annotations (dynamically placed at the end of the X-axis)
+    label_x = len(snp_stats) - 5
+    ax_C.text(label_x, 0.05, 'Additive', color='black', fontsize=9, va='bottom', ha='right')
+    ax_C.text(label_x, 1.05, 'Over-Dominant', color='#505050', fontsize=9, va='bottom', ha='right')
+    ax_C.text(label_x, -0.95, 'Over-Recessive', color='#505050', fontsize=9, va='bottom', ha='right')
+
+    # Add label
+    ax_C.text(-0.1, 1.08, 'C.', transform=ax_C.transAxes, fontsize=14, fontweight='bold', va='top')
+
+    # Format Axes
+    ax_C.set_xticks([]) 
+    ax_C.set_xlim(-2, len(snp_stats) + 2) 
+    ax_C.set_ylabel(r'Dominance Ratio ($\beta_{dom} / \beta_{add}$)', labelpad=10)
+    ax_C.set_ylim(-2.2, 2.2)
 
     # The master X-axis formatting is now anchored to Panel C
     ax_C.set_xlim(-2, len(snp_stats) + 2) 
@@ -557,4 +557,4 @@ if __name__ == "__main__":
 
     #upset_plot(coloc_snps, f"{out_dir}/vep_res.txt", out_dir)
     snp_3D_plot(coloc_snps_info, f"{out_dir}/snp_maf.pdf")
-    #plot_effect_direction(coloc_snps_info, all_snps_df, f"{out_dir}/snps_effect_direction.pdf")
+    plot_effect_direction(coloc_snps_info, all_snps_df, f"{out_dir}/snps_effect_direction.pdf")

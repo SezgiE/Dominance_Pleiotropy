@@ -72,7 +72,7 @@ p <- ggplot(df_clean, aes(x = geno_lab, group = 1)) +
 
 p
 
-ggsave(filename = "/Users/sezgi/Documents/overlapped_SNPs/plots/dom_scenarios.png", plot = p,
+ggsave(filename = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/loci_results/dom_scenarios.png", plot = p,
   width = 170, 
   height = 150, 
   units = "mm",
