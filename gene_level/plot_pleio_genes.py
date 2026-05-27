@@ -7,10 +7,11 @@ import gseapy as gp
 from gseapy import Biomart
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
+from collections import defaultdict
 import matplotlib.patches as mpatches
 from matplotlib_venn import venn2, venn2_circles
 
-bm = Biomart()
+#bm = Biomart()
 
 
 def set_style():
@@ -107,20 +108,22 @@ def plot_intersection(all_genes_df, output_dir):
     eqtl_only_genes = eqtl_genes - pos_genes
     pos_only_genes = pos_genes - eqtl_genes
 
-    gene_to_cat = {}
+    gene_to_cat = defaultdict(set)
     for col in ["gene_id_eqtl", "gene_id_pos"]:
         subset = all_genes_df[[col, "category"]].dropna()
-        gene_to_cat.update(dict(zip(subset[col], subset["category"])))
+        for gene, cat in zip(subset[col], subset["category"]):
+            
+            if isinstance(cat, str) and ',' in cat:
+                for c in cat.split(','):
+                    gene_to_cat[gene].add(c.strip())
+            else:
+                gene_to_cat[gene].add(cat)
 
-    int_cats = pd.Series(
-        [gene_to_cat[g] for g in intersected_genes if g in gene_to_cat]
-    ).value_counts()
-    eqtl_only_cats = pd.Series(
-        [gene_to_cat[g] for g in eqtl_only_genes if g in gene_to_cat]
-    ).value_counts()
-    pos_only_cats = pd.Series(
-        [gene_to_cat[g] for g in pos_only_genes if g in gene_to_cat]
-    ).value_counts()
+   
+    int_cats = pd.Series([cat for g in intersected_genes if g in gene_to_cat for cat in gene_to_cat[g]]).value_counts()
+    eqtl_only_cats = pd.Series([cat for g in eqtl_only_genes if g in gene_to_cat for cat in gene_to_cat[g]]).value_counts()
+    pos_only_cats = pd.Series([cat for g in pos_only_genes if g in gene_to_cat for cat in gene_to_cat[g]]).value_counts()
+
 
     # Combine into a dataframe and convert to percentages for a clean comparison
     cat_df = pd.DataFrame(
@@ -134,7 +137,7 @@ def plot_intersection(all_genes_df, output_dir):
     cat_df_pct = cat_df.div(cat_df.sum(axis=0), axis=1) * 100
 
     set_style()
-    fig, axes = plt.subplots(2, 1, figsize=(6, 8), gridspec_kw={"hspace": 0.4})
+    fig, axes = plt.subplots(2, 1, figsize=(8, 10), gridspec_kw={"hspace": 0.3})
 
     # Panel A: Venn Diagram
     v = venn2(
@@ -158,25 +161,15 @@ def plot_intersection(all_genes_df, output_dir):
                     fontweight="bold", fontsize=14, va="top", ha="right")
 
     # Panel B: Category Distribution (Stacked Bar)
-    npg_palette = [
-        "#E64B35",
-        "#4DBBD5",
-        "#00A087",
-        "#3C5488",
-        "#F39B7F",
-        "#8491B4",
-        "#91D1C2",
-        "#DC0000",
-        "#7E6148",
-        "#B09C85",
-    ]
+    custom_palette = ["#3C5488", '#DC0000','#00A087','#91D1C2',
+                       "#B09C85","#8491B4","#E64B35","#C59316", '#4DBBD5']
 
     # Transpose so x-axis represents the Groups, and stacks represent Categories
     cat_df_pct.T.plot(
         kind="bar",
         stacked=True,
         ax=axes[1],
-        color=npg_palette[: len(cat_df_pct)],
+        color=custom_palette[: len(cat_df_pct)],
         edgecolor="black",
         linewidth=0.5,
     )
@@ -184,7 +177,7 @@ def plot_intersection(all_genes_df, output_dir):
     axes[1].annotate("B.", xy=(-0.1, 1.05), xycoords="axes fraction", 
                     fontweight="bold", fontsize=14, va="top", ha="right")
     
-    axes[1].set_ylabel("Percentage of genes (%)")
+    axes[1].set_ylabel("Percentage of category annotations (%)")
     axes[1].set_xticklabels(axes[1].get_xticklabels(), rotation=0)
 
     # Clean up axes and move legend outside the plot area
@@ -245,19 +238,6 @@ def plot_pleio_genes(pleio_genes, all_genes, std_exp_data, output_dir):
         phen_cat_map, left_on="Phenotype", right_on="phen_name", how="left"
     )
 
-    npg_palette = [
-        "#E64B35",
-        "#4DBBD5",
-        "#00A087",
-        "#3C5488",
-        "#F39B7F",
-        "#8491B4",
-        "#91D1C2",
-        "#DC0000",
-        "#7E6148",
-        "#B09C85",
-    ]
-
     # Sort axes for consistent display
     custom_source_order = ["eQTL", "Both", "Positional"]
     df_plot["Source"] = pd.Categorical(
@@ -279,7 +259,7 @@ def plot_pleio_genes(pleio_genes, all_genes, std_exp_data, output_dir):
     color_map = {
         "Blood biochemistry": "#3C5488",
         "Blood count": "#DC0000",
-        "Medical conditions": "#631879",
+        "Medical conditions": "#8491B4",
         "Eyesight": "#91D1C2",
         "Sun exposure": "#C59316",
         "Visual acuity": "#4DBBD5",
@@ -336,7 +316,13 @@ def plot_pleio_genes(pleio_genes, all_genes, std_exp_data, output_dir):
     for i in range(len(phenotypes)):
         if i % 2 == 0:
             ax.axhspan(
-                i - 0.5, i + 0.5, facecolor="#F4F4F4", zorder=0, edgecolor="none"
+                i - 0.5, i + 0.5, facecolor="gray", zorder=0, edgecolor="none", alpha=0.1
+            )
+    
+    for j in range(len(genes)):
+        if j % 2 == 0:
+            ax.axvspan(
+                j - 0.5, j + 0.5, facecolor="gray", zorder=0, edgecolor="none", alpha=0.12 
             )
 
     edge_alpha = 0.2
@@ -728,9 +714,9 @@ if __name__ == "__main__":
 
     plot_pleio_genes(pleio_genes, all_genes_df, std_exp_data, output_dir)
     
-    # enrich_res = enrichment_getsets(list(pleio_genes.keys()))
-    # enrich_path = os.path.join(output_dir, "pleio_genes_enrichment_results.tsv")
-    # enrich_res.to_csv(enrich_path, sep="\t", index=False)
+    # # enrich_res = enrichment_getsets(list(pleio_genes.keys()))
+    # # enrich_path = os.path.join(output_dir, "pleio_genes_enrichment_results.tsv")
+    # # enrich_res.to_csv(enrich_path, sep="\t", index=False)
 
-    # plot_geneset(enrich_path, output_dir)
+    # # plot_geneset(enrich_path, output_dir)
     

@@ -97,15 +97,14 @@ def plot_heatmap(df, output_dir):
     heatmap_data.index = heatmap_data.index.str.replace('_', ' ')
     heatmap_data = heatmap_data.sort_index(axis=0).sort_index(axis=1)
     data_matrix = heatmap_data.values
-    
+    print(f"Heatmap data shape: {heatmap_data.shape}")
+
     set_style()
     fig, ax = plt.subplots(figsize=(len(heatmap_data.columns) * 0.25, len(heatmap_data) * 0.15 + 4))
 
     # Calculate symmetric bounds for the diverging colormap
     v_max = np.nanmax(np.abs(data_matrix))
     
-    # Use pcolormesh instead of seaborn
-    # Use pcolormesh with the Red-Yellow-Blue (reversed) colormap
     c = ax.pcolormesh(
         data_matrix, 
         cmap='RdYlBu_r', 
@@ -271,5 +270,5 @@ if __name__ == "__main__":
     std_exp_data = std_expression(gtex_med_TPM_path, gtex_pleio_res_path)
     plot_heatmap(std_exp_data, output_dir)
 
-    enrichment_df = enrichment_genetsets(gtex_pleio_res_path, output_dir)
-    plot_geneset(enrichment_df, output_dir)
+    #enrichment_df = enrichment_genetsets(gtex_pleio_res_path, output_dir)
+    #plot_geneset(enrichment_df, output_dir)

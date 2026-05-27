@@ -258,7 +258,8 @@ def plot_heat_and_enrich(df, magma_summary_enrich_path, output_dir):
     heatmap_data.index = heatmap_data.index.str.replace("_", " ")
     heatmap_data = heatmap_data.sort_index(axis=0).sort_index(axis=1)
     data_matrix = heatmap_data.values
-
+    print("Data matrix shape:", data_matrix.shape)
+    
     # Setup Layout
     set_style()
     fig = plt.figure(

@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import gseapy as gp
 from gseapy import Biomart
+from collections import defaultdict
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import matplotlib.patches as mpatches
@@ -75,18 +76,25 @@ def plot_intersection(all_genes_df, output_dir):
     eqtl_only_genes = eqtl_genes - pos_genes
     pos_only_genes = pos_genes - eqtl_genes
 
-    gene_to_cat = {}
+    print([all_genes_df["category"].value_counts()])
+    
+    gene_to_cat = defaultdict(set)
     for col in ["gene_id_eqtl", "gene_id_pos"]:
         subset = all_genes_df[[col, "category"]].dropna()
-        gene_to_cat.update(dict(zip(subset[col], subset["category"])))
-
-
-    int_cats = pd.Series([gene_to_cat[g] for g in intersected_genes if g in gene_to_cat]).value_counts()
-    eqtl_only_cats = pd.Series([gene_to_cat[g] for g in eqtl_only_genes if g in gene_to_cat]).value_counts()
-    pos_only_cats = pd.Series([gene_to_cat[g] for g in pos_only_genes if g in gene_to_cat]).value_counts()
+        for gene, cat in zip(subset[col], subset["category"]):
+            
+            if isinstance(cat, str) and ',' in cat:
+                for c in cat.split(','):
+                    gene_to_cat[gene].add(c.strip())
+            else:
+                gene_to_cat[gene].add(cat)
 
    
-    # Combine into a dataframe and convert to percentages for a clean comparison
+    int_cats = pd.Series([cat for g in intersected_genes if g in gene_to_cat for cat in gene_to_cat[g]]).value_counts()
+    eqtl_only_cats = pd.Series([cat for g in eqtl_only_genes if g in gene_to_cat for cat in gene_to_cat[g]]).value_counts()
+    pos_only_cats = pd.Series([cat for g in pos_only_genes if g in gene_to_cat for cat in gene_to_cat[g]]).value_counts()
+
+    
     cat_df = pd.DataFrame({'Intersected': int_cats, 'eQTL-only': eqtl_only_cats, 'Positional-only': pos_only_cats}).fillna(0)
     cat_df.index = [textwrap.fill(str(cat), width=25) for cat in cat_df.index]
     cat_df_pct = cat_df.div(cat_df.sum(axis=0), axis=1) * 100
@@ -108,14 +116,16 @@ def plot_intersection(all_genes_df, output_dir):
     axes[0].set_title('A.', loc='left', fontweight='bold', fontsize=14, x=-0.1)
 
     # Panel B: Category Distribution (Stacked Bar)
-    npg_palette = ['#E64B35', '#4DBBD5', '#00A087', '#3C5488', '#F39B7F', 
-                   '#8491B4', '#91D1C2', '#DC0000', '#7E6148', '#B09C85']
+    
+    custom_palette = ["#3C5488", '#DC0000','#00A087','#91D1C2',
+                       "#B09C85","#8491B4","#E64B35","#C59316", '#4DBBD5']
+    
     
     # Transpose so x-axis represents the Groups, and stacks represent Categories
-    cat_df_pct.T.plot(kind='bar', stacked=True, ax=axes[1], color=npg_palette[:len(cat_df_pct)], edgecolor='black', linewidth=0.5)
+    cat_df_pct.T.plot(kind='bar', stacked=True, ax=axes[1], color=custom_palette[:len(cat_df_pct)], edgecolor='black', linewidth=0.5)
     
     axes[1].set_title('B.', loc='left', fontweight='bold', fontsize=14, x=-0.1)
-    axes[1].set_ylabel('Percentage of genes (%)')
+    axes[1].set_ylabel('Percentage of category annotations (%)')
     axes[1].set_xticklabels(axes[1].get_xticklabels(), rotation=0)
     
     # Clean up axes and move legend outside the plot area
@@ -289,25 +299,25 @@ if __name__ == "__main__":
     output_dir = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/plots"
 
     # Intersection between MAGMA and eQTL
-    #plot_intersection(all_genes_df, output_dir)
+    plot_intersection(all_genes_df, output_dir)
 
 
     # Gene set enrichment by category
     categories = all_genes_df["category"].dropna().unique()
     
-    enrich_results = {}
-    enrich_output_dir = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/genes_all"
+    # enrich_results = {}
+    # enrich_output_dir = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/genes_all"
     
-    for category in categories:
+    # for category in categories:
 
-        category_df = all_genes_df[all_genes_df["category"] == category]
-        category_genes = category_df["gene_id_eqtl"].dropna().unique().tolist() + category_df["gene_id_pos"].dropna().unique().tolist()
-        category_genes = list(set(category_genes))
+    #     category_df = all_genes_df[all_genes_df["category"] == category]
+    #     category_genes = category_df["gene_id_eqtl"].dropna().unique().tolist() + category_df["gene_id_pos"].dropna().unique().tolist()
+    #     category_genes = list(set(category_genes))
         
-        enrich_res = enrichment_getsets(category_genes)
-        enrich_results[category] = enrich_res
+    #     enrich_res = enrichment_getsets(category_genes)
+    #     enrich_results[category] = enrich_res
         
-        plot_geneset(enrich_res, category, enrich_output_dir)
+    #     plot_geneset(enrich_res, category, enrich_output_dir)
 
-    enrich_results_df = pd.concat(enrich_results, names=['Category', 'Index']).reset_index(level=0)
-    enrich_results_df.to_csv(os.path.join(enrich_output_dir, "geneset_category_results.tsv"), sep='\t', index=False)
+    # enrich_results_df = pd.concat(enrich_results, names=['Category', 'Index']).reset_index(level=0)
+    # enrich_results_df.to_csv(os.path.join(enrich_output_dir, "geneset_category_results.tsv"), sep='\t', index=False)

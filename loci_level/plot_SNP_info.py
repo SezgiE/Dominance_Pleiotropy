@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import upsetplot as us
 import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
 
 
 def set_style():
@@ -319,14 +320,16 @@ def snp_3D_plot(result_df_path, output_path):
     ax = fig.add_subplot(gs[:, 1], projection='3d')
     ax.set_box_aspect([2.0, 2.0, 1.8])
     ax.dist = 7
-    colors_cmap = plt.get_cmap('tab10')
+    colors = ["#3C5488", '#DC0000','#00A087','#91D1C2',
+              "#B09C85","#8491B4","#E64B35","#C59316", '#4DBBD5']
+    custom_cmap = ListedColormap(colors)
     
     # Scatter plot
     scatter = ax.scatter(result_df["maf"], 
                          result_df["cat_num"], 
                          result_df["std_dom_Bsq"], 
                          c=result_df["cat_num"], 
-                         cmap='tab10', 
+                         cmap=custom_cmap, 
                          s=55, 
                          alpha=0.7, 
                          edgecolors='w', 
@@ -334,10 +337,8 @@ def snp_3D_plot(result_df_path, output_path):
 
     # Drop lines to floor
     norm = plt.Normalize(vmin=result_df["cat_num"].min(), vmax=result_df["cat_num"].max())
-    cmap = plt.get_cmap('tab10')
     for x, y, z, c_idx in zip(result_df["maf"], result_df["cat_num"], result_df["std_dom_Bsq"], result_df["cat_num"]):
-        # Pass the normalized index to the cmap to lock the colors together
-        ax.plot([x, x], [y, y], [0, z], color=cmap(norm(c_idx)), alpha=0.6, linewidth=1.5)
+        ax.plot([x, x], [y, y], [0, z], color=custom_cmap(norm(c_idx)), alpha=0.6, linewidth=1.5)
 
     # 3D Labels & Formatting
     ax.set_xlabel('MAF', labelpad=10)
@@ -557,4 +558,4 @@ if __name__ == "__main__":
 
     #upset_plot(coloc_snps, f"{out_dir}/vep_res.txt", out_dir)
     snp_3D_plot(coloc_snps_info, f"{out_dir}/snp_maf.pdf")
-    plot_effect_direction(coloc_snps_info, all_snps_df, f"{out_dir}/snps_effect_direction.pdf")
+    #plot_effect_direction(coloc_snps_info, all_snps_df, f"{out_dir}/snps_effect_direction.pdf")

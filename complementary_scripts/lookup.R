@@ -9,8 +9,10 @@ library(openxlsx)
 rm(list = setdiff(ls(all.names = TRUE), c("all_sig_df", "clumped_df")))
 
 #  Load the data 
-merged_path <- "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/significant_SNPs/all_sig_SNPs.tsv.gz"
+merged_path <- "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/genes_all/genes_all.tsv"
 coloc_merged <- fread(merged_path)
+
+unqvar <- unique(coloc_merged$gene_id_eqtl)
 
 
 coloc_merged <- coloc_merged %>%
