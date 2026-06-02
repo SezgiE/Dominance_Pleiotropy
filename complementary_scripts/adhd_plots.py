@@ -642,6 +642,105 @@ def plot_parental_trends(scale_data_dir, parental_output):
     trend_stats.to_excel(excel_path, index=False)
 
 
+def scale_panel_B(scale_data_dir, output_dir):
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # ==========================================
+    # 1. DATA PROCESSING: TRENDS
+    # ==========================================
+    file_path = os.path.join(scale_data_dir, "sumscore_Data.RDS")
+    result = pyreadr.read_r(file_path)
+    df_trends = result[None] 
+    
+    # Keep complete cases
+    cols_to_check = ["FID", "PID", "mult_id_fam", "sex", "yob", "zyg", "assigned_age"]
+    df_trends = df_trends.dropna(subset=[c for c in cols_to_check if c in df_trends.columns]).copy()
+    
+    # Create 6-year bins for birth year
+    yob_min = int(df_trends['yob'].min())
+    yob_max = int(df_trends['yob'].max())
+    breaks = list(range(yob_min, yob_max + 7, 6))
+    labels = [f"{breaks[i]}-{breaks[i+1]-1}" for i in range(len(breaks)-1)]
+    
+    df_trends['yob_bin'] = pd.cut(df_trends['yob'], bins=breaks, labels=labels, right=False, include_lowest=True)
+    
+    # Bin groups < 200
+    df_trends['group_count'] = df_trends.groupby(['scale', 'yob_bin', 'respondent', 'assigned_age'], observed=True)['yob'].transform('count')
+    df_trends['yob_bin_plot'] = np.where(df_trends['group_count'] < 200, "2004-2009", df_trends['yob_bin'].astype(str))
+    
+    # Descriptive stats for plotting
+    desc_stats = df_trends.groupby(['scale', 'yob_bin_plot', 'respondent', 'assigned_age'], observed=True).agg(
+        mean_response=('score', 'mean'),
+        sd_response=('score', 'std'),
+        n=('score', 'count')
+    ).reset_index()
+    desc_stats['sem_response'] = desc_stats['sd_response'] / np.sqrt(desc_stats['n'])
+
+
+    # ==========================================
+    # 2. PLOTTING: SINGLE PANEL (ADHP Scale)
+    # ==========================================
+    # Assumes set_style2() is defined elsewhere in your environment
+    if 'set_style2' in globals():
+        set_style2()
+    
+    # Sized for a single-column layout (approx 89mm/3.5 inches)
+    fig, ax = plt.subplots(figsize=(8, 5))
+    
+    # NPG Color Palette & Styles
+    rater_colors = {"m": "#3C5488", "f": "#F39B7F", "t": "#00A087"}
+    age_linestyles = {"7": "-", "10": "--", "12": ":"}
+    
+    # Filter only for the ADHP (dsm) scale
+    subset = desc_stats[desc_stats['scale'] == 'dsm'].copy()
+    unique_bins = sorted(subset['yob_bin_plot'].unique())
+    
+    for (rater, age), grp in subset.groupby(['respondent', 'assigned_age']):
+        grp['yob_bin_plot'] = pd.Categorical(grp['yob_bin_plot'], categories=unique_bins, ordered=True)
+        grp = grp.sort_values('yob_bin_plot')
+        
+        ax.plot(grp['yob_bin_plot'].astype(str), grp['mean_response'], 
+                color=rater_colors.get(rater, 'black'), 
+                linestyle=age_linestyles.get(str(int(age)), '-'), 
+                linewidth=1.2, marker='o', markersize=3.5)
+        
+    #ax.set_title('ADHP Scale', fontweight='bold', fontsize=10)
+    ax.grid(True, axis='y', color='gray', linestyle='-', linewidth=0.2, alpha=0.5)
+    
+    # Formatting axes
+    ax.tick_params(axis='x', labelsize=8) 
+    ax.tick_params(axis='y', labelsize=9)
+    ax.set_xlabel("Geboortecohort", size=10, labelpad=8)
+    ax.set_ylabel("Gemiddelde Somscore", size=10, labelpad=8)
+    ax.set_ylim(0, 4)
+    ax.set_yticks([0, 1, 2, 3, 4])
+    # Add overarching figure title
+    fig.suptitle("Trends in aandachts en hyperactiviteits problemen over 30 jaar", 
+                 fontsize=10, fontweight='bold', y=1)
+    
+    # Despine top and right for a cleaner aesthetic
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+
+    # Unified legends stacked at the bottom
+    custom_lines_rater = [Line2D([0], [0], color=c, marker='o', lw=0, markersize=4) for c in rater_colors.values()]
+    fig.legend(custom_lines_rater, ['Moeder', 'Vader', 'Leerkracht'], title="Respondent", 
+               frameon=False, bbox_to_anchor=(0.42, 0.12), loc='upper center', ncol=3,
+               fontsize=8, title_fontsize=9, handletextpad=0.2, columnspacing=0.8)
+              
+    custom_lines_age = [Line2D([0], [0], color='gray', linestyle=ls, lw=1.5) for ls in age_linestyles.values()] 
+    fig.legend(custom_lines_age, ['7', '10', '12'], title="Leeftijdsclassificatie", 
+               frameon=False, bbox_to_anchor=(0.70, 0.12), loc='upper center', ncol=3,
+               fontsize=8, title_fontsize=9, handletextpad=0.2, columnspacing=0.8)
+    
+    # Adjust layout to fit the main panel
+    fig.subplots_adjust(left=0.15, right=0.95, top=0.90, bottom=0.25)
+    
+    out_path = os.path.join(output_dir, "ADHP_trends.pdf")
+    # bbox_inches='tight' prevents the exterior legends from being clipped off the page
+    plt.savefig(out_path, format='pdf', transparent=True, bbox_inches='tight', dpi=600)
+
+
 if __name__ == "__main__":
     
     # ------------------ SETUP ------------------
@@ -657,8 +756,8 @@ if __name__ == "__main__":
     scale_trend_path_corr = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/sum_score_analyses/model_results_SA/corr/openmx_parameters_corr_SA.xlsx"
     scale_data_dir = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/sum_score_analyses/data_SA"
     scale_out_dir = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/sum_score_analyses/model_results_SA"
-    scale_combined_figure(scale_data_dir, scale_trend_path, scale_trend_path_corr, scale_out_dir)
-
+    #scale_combined_figure(scale_data_dir, scale_trend_path, scale_trend_path_corr, scale_out_dir)
+    scale_panel_B(scale_data_dir, scale_out_dir)
 
     # Parental EA and Age plotting
     parental_output = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/EA_QualityControl/trend_age/parental_trend.pdf"
