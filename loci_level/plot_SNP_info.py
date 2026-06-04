@@ -285,6 +285,7 @@ def snp_3D_plot(result_df_path, output_path):
     ax1.hist(result_df["maf"], bins=30, weights=weights1, color="#2c7fb8", edgecolor='black', alpha=0.7)
     
     maf_median = result_df["maf"].median()
+    print(f"range of MAF: {result_df['maf'].min()} to {result_df['maf'].max()}")
     ax1.axvline(maf_median, color='red', linestyle='--', linewidth=1)
     ax1.text(maf_median + 0.02, ax1.get_ylim()[1]*0.8, f'Median: {maf_median:.3f}', color='red', fontsize=9)
     
@@ -303,6 +304,7 @@ def snp_3D_plot(result_df_path, output_path):
     ax2.hist(clipped_data, bins=30, weights=weights2, color="#7fcdbb", edgecolor='black', alpha=0.7)
     
     beta_median = result_df["std_dom_Bsq"].median()
+    print(f"range of beta^2: {result_df['std_dom_Bsq'].min()} to {result_df['std_dom_Bsq'].max()}")
     ax2.axvline(beta_median, color='red', linestyle='--', linewidth=1)
     ax2.text(beta_median + 0.0002, ax2.get_ylim()[1]*0.8, f'Median: {beta_median:.4f}', color='red', fontsize=9)
     
