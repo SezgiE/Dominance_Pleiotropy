@@ -206,7 +206,7 @@ def compile_coloc_results(out_dir, phen_code_to_name, category_map,
         return None, None
         
     merged = pd.concat((pd.read_csv(f, sep='\t') for f in files), ignore_index=True)
-    merged = merged[merged['cs_H4'] >= h4_threshold]
+    merged = merged[merged['cs_H4'] > h4_threshold]
 
 
     # Add category and phenotype name columns
