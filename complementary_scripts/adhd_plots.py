@@ -272,9 +272,12 @@ def plot_beta_distributions(trend_res_path, trend_res_path_corr, output_dir):
     df['err_low'] = df['beta_bc'] - df['low_conf']
     df['err_up'] = df['up_conf'] - df['beta_bc']
     df['q_num'] = df['q_name'].str.extract(r'(\d+)').astype(float)
+
+    baseline_sig_combos = df.set_index(['q_name', 'rater', 'rated_age']).index
     
     # Process Corrected (df_corr)
-    df_corr = df_corr[df_corr['significance'] == True].copy()
+    corr_combos = df_corr.set_index(['q_name', 'rater', 'rated_age']).index
+    df_corr = df_corr[(df_corr['significance'] == True) | (corr_combos.isin(baseline_sig_combos))].copy()
     df_corr = df_corr.drop_duplicates(subset=['q_name', 'rater', 'rated_age']).reset_index(drop=True)
     df_corr['err_low'] = df_corr['beta_bc'] - df_corr['low_conf']
     df_corr['err_up'] = df_corr['up_conf'] - df_corr['beta_bc']
@@ -295,7 +298,7 @@ def plot_beta_distributions(trend_res_path, trend_res_path_corr, output_dir):
     
     panels = [
         (axes[0], df, 'Unadjusted', 'A.'),
-        (axes[1], df_corr, 'Adjusted for Parental EA and Age', 'B.')
+        (axes[1], df_corr, 'Adjusted for Parental Age', 'B.')
     ]
     
     for ax, panel_df, title, panel_letter in panels:
@@ -307,22 +310,26 @@ def plot_beta_distributions(trend_res_path, trend_res_path_corr, output_dir):
         for i, item in enumerate(items):
             subset = panel_df[panel_df['q_name'] == item]
             n_points = len(subset)
-            offsets = np.linspace(-0.3, 0.3, n_points) if n_points > 1 else [0]
+            offsets = np.linspace(-0.35, 0.35, n_points) if n_points > 1 else [0]
             
             for j, (_, row) in enumerate(subset.iterrows()):
                 color = rater_colors.get(str(row['rater']).lower(), '#333333')
                 age_val = int(row['rated_age'])
                 ls = age_linestyles.get(age_val, '-')
                 
+                is_sig = row.get('significance', True) 
+                point_alpha = 1.0 if is_sig else 0.6
+
                 eb = ax.errorbar(row['beta_bc'], i + offsets[j], 
                             xerr=[[row['err_low']], [row['err_up']]],
                             marker='o', linestyle='none', color=color, markersize=3.5, 
-                            elinewidth=1.0, capsize=0)
+                            elinewidth=1.0, capsize=0, alpha=point_alpha)
+                
                 eb[2][0].set_linestyle(ls)
                 
         ax.axvline(0, color='gray', linestyle='--', linewidth=0.8, alpha=0.7)
         ax.set_title(title, fontweight='bold', fontsize=12)
-        ax.set_xlabel("Beta Coefficient (95% CI)", labelpad=10)
+        ax.set_xlabel("Beta Coefficient (99.72% CI)", labelpad=10)
         
         # Panel lettering
         ax.text(-0.05 if panel_letter == 'B.' else -0.15, 1.05, panel_letter, 
@@ -333,7 +340,8 @@ def plot_beta_distributions(trend_res_path, trend_res_path_corr, output_dir):
     axes[0].set_yticklabels([f"Item {item.replace('q', '')}" for item in items])
     axes[1].tick_params(left=False) # Remove inner tick marks between the plots
     axes[1].spines['left'].set_visible(False)
-    
+    axes[0].invert_yaxis()
+    axes[0].set_xlim(axes[1].get_xlim())
 
     # Unified legends attached to the figure at the bottom
     custom_lines_rater = [Line2D([0], [0], color=c, marker='o', lw=0, markersize=4) for c in rater_colors.values()]
@@ -641,7 +649,7 @@ def plot_parental_trends(scale_data_dir, parental_output):
     excel_path = os.path.join(os.path.dirname(parental_output), "parental_trends_descriptives.xlsx")
     trend_stats.to_excel(excel_path, index=False)
 
-
+#dorret
 def scale_panel_B(scale_data_dir, output_dir):
     os.makedirs(output_dir, exist_ok=True)
     
@@ -750,14 +758,14 @@ if __name__ == "__main__":
     output_dir = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/item_level_analyses"
     
     #plot_item_level_trends(item_data_dir, output_dir)
-    #plot_beta_distributions(trend_res_path, trend_res_path_corr, output_dir)
+    plot_beta_distributions(trend_res_path, trend_res_path_corr, output_dir)
     
     scale_trend_path = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/sum_score_analyses/model_results_SA/openmx_parameters_SA.xlsx"
     scale_trend_path_corr = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/sum_score_analyses/model_results_SA/corr/openmx_parameters_corr_SA.xlsx"
     scale_data_dir = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/sum_score_analyses/data_SA"
     scale_out_dir = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/sum_score_analyses/model_results_SA"
     #scale_combined_figure(scale_data_dir, scale_trend_path, scale_trend_path_corr, scale_out_dir)
-    scale_panel_B(scale_data_dir, scale_out_dir)
+    #scale_panel_B(scale_data_dir, scale_out_dir)
 
     # Parental EA and Age plotting
     parental_output = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/EA_QualityControl/trend_age/parental_trend.pdf"
