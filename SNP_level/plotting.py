@@ -726,7 +726,7 @@ def plot_pleiotropy_matrix(merged_df, phen_info_df, out_dir, chromosomes=list(ra
                      title="Phenotype Categories", title_fontproperties={'weight': 'bold', 'size': 7})
 
     # Output
-    output_file = os.path.join(out_dir, "pleiotropy_matrix.png")
+    output_file = os.path.join(out_dir, "pleiotropy_matrix.pdf")
     plt.savefig(output_file, dpi=600, bbox_inches='tight')
     plt.close()
     print(f"Matrix successfully saved to: {output_file}")
@@ -756,8 +756,8 @@ if __name__ == "__main__":
     # plot_chromosome_density(sig_SNPs_df, output_dir)
     # plot_manhattan(sig_SNPs_df, output_dir)
     # plot_desc_percentages(desc_file_path, output_dir)
-    plot_combined_figure(sig_SNPs_df, desc_file_path, phen_info_df,output_dir)
-    #plot_pleiotropy_matrix(sig_SNPs_df, phen_info_df, output_dir)
+    #plot_combined_figure(sig_SNPs_df, desc_file_path, phen_info_df,output_dir)
+    plot_pleiotropy_matrix(sig_SNPs_df, phen_info_df, output_dir)
     #plot_desc_percentages(desc_file_path, output_dir)
     
     

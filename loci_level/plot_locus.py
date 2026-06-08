@@ -104,7 +104,7 @@ def lighten_color(hex_color, amount=0.5):
         return hex_color
 
 
-def plot_regional_association(plot_df, genes_df, susie_df, phen_code, phen_name, output_dir, buffer_kb=50):
+def plot_regional_association(plot_number, plot_df, genes_df, susie_df, phen_code, phen_name, output_dir, buffer_kb=50):
     """Generates LocusZoom-style plots for each unique independent locus."""
     
     set_style()
@@ -118,6 +118,8 @@ def plot_regional_association(plot_df, genes_df, susie_df, phen_code, phen_name,
     if n_blocks == 0:
         print(f"No locus to plot for ' {phen_name}'. Skipping...")
         return None
+    else:
+        plot_number += 1
 
     plot_df = plot_df.sort_values("dom_log10_pval", ascending=False).reset_index(drop=True)
     
@@ -412,10 +414,20 @@ def plot_regional_association(plot_df, genes_df, susie_df, phen_code, phen_name,
             max_pip = pip_df.loc[cs_mask, 'PIP'].max()
             top_snps = pip_df.loc[cs_mask & (pip_df['PIP'] == max_pip), 'rsid'].tolist()
             rsid_str = ", ".join(top_snps)
+
+            if max_pip >= 0.01:
+                pip_str = f"{max_pip:.2f}"    
+            elif max_pip >= 0.001:
+                pip_str = f"{max_pip:.3f}"  
+            elif max_pip >= 0.0001:
+                pip_str = f"{max_pip:.4f}"  
+            else:
+                pip_str = f"{max_pip:.2e}"
+            
             pip_legend.append(
                 plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=color, 
                            markeredgecolor='black', markersize=5, 
-                           label=f'CS {int(cs)}: {rsid_str}')
+                           label=f'CS {int(cs)}: {rsid_str} (PIP = {pip_str})')
             )
 
         if pip_legend:
@@ -424,11 +436,11 @@ def plot_regional_association(plot_df, genes_df, susie_df, phen_code, phen_name,
                 loc='upper left',
                 bbox_to_anchor=(1.05, 1), 
                 frameon=False,
-                title='Credible Sets (Top SNP)',
+                title='95% Credible Sets\n(Highest PIP SNP)',
                 fontsize=5,
                 title_fontsize=7,
-                labelspacing=0.5,
-                handletextpad=0.1
+                labelspacing=0.6,
+                handletextpad=0.2
             )
             
         
@@ -472,16 +484,19 @@ def plot_regional_association(plot_df, genes_df, susie_df, phen_code, phen_name,
 
 
     # Save
-    fig.suptitle(f"Phenotype: {phen_name}", x=0.05, y=0.98, ha='left', fontsize=14, fontweight='bold')
+    fig.text(0.05, 0.98, f"Figure {plot_number}", ha='left', fontsize=14, fontweight='bold')
+    fig.text(0.05, 0.95, f"Phenotype: {phen_name}", ha='left', fontsize=11, fontweight='bold')
     
     plt.subplots_adjust(top=0.92)
 
-    output_file = os.path.join(output_dir, f'l_plot_{phen_code}.pdf')
+    output_file = os.path.join(output_dir, f'{plot_number}_plot_{phen_code}.pdf')
 
     plt.savefig(output_file, dpi=600, bbox_inches='tight')
     plt.close()
     
     print(f"-> Saved  grid plot: {output_file}")
+    
+    return plot_number
 
 
 if __name__ == "__main__":
@@ -496,9 +511,8 @@ if __name__ == "__main__":
     traits = pd.read_excel(phen_dict_path, usecols=["phenotype_code", "description"])
     #traits = traits[traits["phenotype_code"] == "1747_2"]
 
-
+    plot_number = 0
     for index, row in traits.iterrows():
-        
         phen_code = row['phenotype_code']
         phen_name = row['description']
 
@@ -517,4 +531,4 @@ if __name__ == "__main__":
 
         genes_df = get_gene_annotations(gene_bed_path)
         
-        plot_regional_association(plot_df, genes_df, susie_df, phen_code, phen_name, out_dir)
+        plot_number = plot_regional_association(plot_number, plot_df, genes_df, susie_df, phen_code, phen_name, out_dir)

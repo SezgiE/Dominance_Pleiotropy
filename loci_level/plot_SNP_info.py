@@ -81,15 +81,13 @@ def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset
     # --- Load and Clean Data ---
     coloc_df = pd.read_csv(coloc_filepath, sep='\t') 
     
-    # Check how many '##' metadata lines exist so Pandas can skip them
+    # Check how many '##' and  skip them
     with open(vep_filepath, 'r') as f:
         skip_lines = sum(1 for line in f if line.startswith('##'))
         
     vep_df = pd.read_csv(vep_filepath, sep='\t', skiprows=skip_lines)
     vep_df.rename(columns={'#Uploaded_variation': 'Variant_ID'}, inplace=True)
-
     
-    # Convert comma-separated phen_codes into actual Python lists for the UpSet logic
     coloc_df['categories'] = coloc_df['phen_categories'].apply(
             lambda x: [textwrap.fill(code.strip(), width=25) for code in str(x).split(',')] if pd.notnull(x) else []
         )
@@ -179,6 +177,29 @@ def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset
     #axes_dict = upset.plot(fig=subfigs[0])
     axes_dict = upset.plot(fig=fig)
 
+    totals_ax = axes_dict['totals']
+    matrix_ax = axes_dict['matrix']
+
+    y_ticks = matrix_ax.get_yticks()
+    y_labels = [t.get_text().lower() for t in matrix_ax.get_yticklabels()]
+    label_map = dict(zip(y_ticks, y_labels))
+
+    max_width = totals_ax.get_xlim()[0]
+    offset = max_width * 0.05
+
+    for patch in totals_ax.patches:
+        # Get the vertical center of the bar to match it with the trait name
+        bar_y = round(patch.get_y() + patch.get_height() / 2)
+        label = label_map.get(bar_y, "")
+        
+        # Check if the bar belongs to a significant category
+        if any(sig in label for sig in ["blood biochemistry", "sun exposure", "blood count"]):
+            bar_width = patch.get_width()
+            
+            # Place the asterisk at the tip of the bar
+            totals_ax.text(bar_width + offset, bar_y - 0.15, '*', 
+                           va='center', ha='center', fontsize=16, fontweight='bold', color='black')
+
     #subfigs[0].text(0.1, 0.95, 'A.', fontsize=14, fontweight='bold', family='Arial')
     
     consequence_colors = {'Non coding transcript exon variant': "#b0a234",
@@ -210,7 +231,7 @@ def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset
                     labels, 
                     loc='upper left', 
                     bbox_to_anchor=(-0.37, 1.1), 
-                    fontsize=8,
+                    fontsize=7.5,
                     labelspacing=0.5,   
                     frameon=True,
                     title="Variant Consequences",
@@ -227,6 +248,8 @@ def upset_plot(coloc_filepath, vep_filepath, out_dir, filename="pleiotropy_upset
                 if total > 0:
                     ax.text(x, total, f'{int(total)}', ha='center', va='bottom', 
                             fontsize=8, fontweight='bold')
+    
+    fig.text(0.131, 0.617, '* FDR-adj p < 0.05', fontsize=10, style='italic', family='Arial')
 
 
     """# --- PANEL B: Histogram of SNPs per Consequence ---
@@ -558,6 +581,6 @@ if __name__ == "__main__":
     coloc_snps_info = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/coloc_results/coloc_snp_info.tsv"
     out_dir="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/loci_results" 
 
-    #upset_plot(coloc_snps, f"{out_dir}/vep_res.txt", out_dir)
-    snp_3D_plot(coloc_snps_info, f"{out_dir}/snp_maf.pdf")
+    upset_plot(coloc_snps, f"{out_dir}/vep_res.txt", out_dir)
+    #snp_3D_plot(coloc_snps_info, f"{out_dir}/snp_maf.pdf")
     #plot_effect_direction(coloc_snps_info, all_snps_df, f"{out_dir}/snps_effect_direction.pdf")
