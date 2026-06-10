@@ -193,6 +193,156 @@ def plot_intersection(all_genes_df, output_dir):
     plt.close()
 
 
+def plot_geneset(enrich_path, output_dir):
+
+    df = pd.read_csv(enrich_path, sep="\t")
+
+    # Data Prep
+    df["Term"] = df["Term"].str.replace(r"\s*\([^)]*\)", "", regex=True)
+    mask = df["Gene_set"] == "KEGG_2026"
+    df.loc[mask, "Term"] = df.loc[mask, "Term"].str.title()
+    df["Gene_set"] = df["Gene_set"].str.replace("_", " ")
+    df_sorted = df.sort_values(
+        ["Gene_set", "Term"], ascending=[False, False]
+    ).reset_index(drop=True)
+
+    colors = ["#FF9F1C", "#00A087", "#E64B35", "#4DBBD5", "#7E818D", "#3C5488"]
+    unique_dbs = df_sorted["Gene_set"].unique()
+    db_color_map = {db: colors[i % len(colors)] for i, db in enumerate(unique_dbs)}
+    row_colors = df_sorted["Gene_set"].map(db_color_map)
+
+    all_genes = set()
+
+    for genes_str in df_sorted["Genes"]:
+        all_genes.update(str(genes_str).split(";"))
+    unique_genes = sorted(list(all_genes))
+
+    # Initialize the plot
+    set_style()
+    fig, (ax_l, ax_r, ax_m) = plt.subplots(
+        1,
+        3,
+        figsize=(16, len(df_sorted) * 0.18),
+        sharey=True,
+        # 2. Lowered the matrix ratio from 3 to 1.5 (Tweak this specific number!)
+        gridspec_kw={"width_ratios": [1.5, 1.5, 2.8], "wspace": 0},
+    )
+
+    # Horizontal background shading
+    for i in range(len(df_sorted)):
+        row_alpha = 0.15 if i % 2 == 0 else 0.05
+        for ax in [ax_l, ax_r, ax_m]:
+            ax.axhspan(i - 0.4, i + 0.4, color="gray", alpha=row_alpha, zorder=0, lw=0)
+
+    # Overlap histogram
+    ax_l.barh(
+        range(len(df_sorted)),
+        -df_sorted["Overlap"],
+        color=row_colors,
+        edgecolor="black",
+        linewidth=1,
+        height=0.7,
+        zorder=3,
+    )
+    ax_l.set_xlim(right=0)
+    ax_l.set_xlabel("Overlap Proportion", fontsize=12, labelpad=10)
+    ax_l.xaxis.set_major_formatter(
+        ticker.FuncFormatter(lambda x, pos: "" if x == 0 else f"{abs(x):.2f}")
+    )
+
+    # -log10(FDR) plot
+    ax_r.scatter(
+        df_sorted["log10(FDR)"],
+        range(len(df_sorted)),
+        color=row_colors,
+        edgecolor="black",
+        linewidth=1,
+        s=30,
+        zorder=3,
+    )
+    ax_r.set_xlim(left=0, right=df_sorted["log10(FDR)"].max() + 1)
+
+    ax_r.set_xlabel(r"$-\log_{10}(\text{FDR-adj. p < 0.05})$", fontsize=12, labelpad=10)
+
+    # Y-labels
+    ax_l.set_yticks(range(len(df_sorted)))
+    ax_l.set_yticklabels(df_sorted["Term"], ha="right", fontsize=9)
+
+    # The shared spine in the middle
+    ax_l.spines["right"].set_visible(True)
+    ax_r.spines["left"].set_visible(True)
+
+    # Ensure a vertical line exists at x=0 for both
+    ax_l.axvline(0, color="black", linewidth=1, zorder=4)
+    ax_r.axvline(0, color="black", linewidth=1, zorder=4)
+
+    # Matrix Panel (Far Right)
+    for i, row in df_sorted.iterrows():
+        row_genes = str(row["Genes"]).split(";")
+        for j, gene in enumerate(unique_genes):
+            if gene in row_genes:
+                ax_m.scatter(
+                    j,
+                    i,
+                    color=row_colors[i],
+                    marker="s",
+                    s=50,
+                    edgecolor="black",
+                    linewidth=1,
+                    zorder=3,
+                )
+
+    # Alternating vertical background shading
+    for j in range(len(unique_genes)):
+        if j % 2 == 0:  # Only shades every other column
+            ax_m.axvspan(j - 0.5, j + 0.5, color="gray", alpha=0.08, zorder=0, lw=0)
+
+    # Configure the matrix
+    ax_m.set_xticks(range(len(unique_genes)))
+    ax_m.set_xticklabels(unique_genes, rotation=90, ha="center", fontsize=8)
+    ax_m.xaxis.tick_bottom()
+    ax_m.tick_params(axis="x", direction="inout", length=8, width=1)
+
+    # Lock the limits
+    ax_m.set_aspect("equal")
+    ax_m.set_xlim(-0.5, len(unique_genes) - 0.5)
+    ax_l.set_ylim(-1, len(df_sorted) - 0.5)
+
+    # Final cleanup
+    for ax in [ax_l, ax_r, ax_m]:
+        for spine in ["top", "right", "left", "bottom"]:
+            if ax == ax_m and spine == "top":
+                continue
+            if spine != "bottom":
+                ax.spines[spine].set_visible(False)
+
+        ax.tick_params(axis="y", left=False, right=False)
+
+    # Create legend
+    legend_handles = [
+        mpatches.Patch(
+            facecolor=db_color_map[db], edgecolor="black", linewidth=1, label=db
+        )
+        for db in sorted(db_color_map.keys())
+    ]
+
+    fig.legend(
+        handles=legend_handles,
+        loc="lower center",
+        bbox_to_anchor=(0.6, 0.99),
+        ncol=len(db_color_map),
+        frameon=False,
+        fontsize=10,
+        handlelength=1.2,
+        columnspacing=2.0,
+    )
+
+    plt.tight_layout()
+    plt.savefig(
+        f"{output_dir}/pleio__genes_enrichment_plot.pdf", dpi=600, bbox_inches="tight"
+    )
+
+
 def plot_pleio_genes(pleio_genes, all_genes, std_exp_data, output_dir):
 
     # --------------------------- Data preparation for Panel A ---------------------------
@@ -255,6 +405,11 @@ def plot_pleio_genes(pleio_genes, all_genes, std_exp_data, output_dir):
         .sort_values(["category", "Phenotype"])["Phenotype"]
         .tolist()
     )
+
+    for gene in genes:
+        phens = df_plot[df_plot["gene_name_pos"] == gene]["Phenotype"].unique().tolist()
+        phens_formatted = "[" + ", ".join(f'"{p}"' for p in phens) + "]"
+        print(f"[{gene}: Associated_traits = {phens_formatted}],")
 
     color_map = {
         "Blood biochemistry": "#3C5488",
@@ -501,156 +656,6 @@ def plot_pleio_genes(pleio_genes, all_genes, std_exp_data, output_dir):
     )
 
 
-def plot_geneset(enrich_path, output_dir):
-
-    df = pd.read_csv(enrich_path, sep="\t")
-
-    # Data Prep
-    df["Term"] = df["Term"].str.replace(r"\s*\([^)]*\)", "", regex=True)
-    mask = df["Gene_set"] == "KEGG_2026"
-    df.loc[mask, "Term"] = df.loc[mask, "Term"].str.title()
-    df["Gene_set"] = df["Gene_set"].str.replace("_", " ")
-    df_sorted = df.sort_values(
-        ["Gene_set", "Term"], ascending=[False, False]
-    ).reset_index(drop=True)
-
-    colors = ["#FF9F1C", "#00A087", "#E64B35", "#4DBBD5", "#7E818D", "#3C5488"]
-    unique_dbs = df_sorted["Gene_set"].unique()
-    db_color_map = {db: colors[i % len(colors)] for i, db in enumerate(unique_dbs)}
-    row_colors = df_sorted["Gene_set"].map(db_color_map)
-
-    all_genes = set()
-
-    for genes_str in df_sorted["Genes"]:
-        all_genes.update(str(genes_str).split(";"))
-    unique_genes = sorted(list(all_genes))
-
-    # Initialize the plot
-    set_style()
-    fig, (ax_l, ax_r, ax_m) = plt.subplots(
-        1,
-        3,
-        figsize=(16, len(df_sorted) * 0.18),
-        sharey=True,
-        # 2. Lowered the matrix ratio from 3 to 1.5 (Tweak this specific number!)
-        gridspec_kw={"width_ratios": [1.5, 1.5, 2.8], "wspace": 0},
-    )
-
-    # Horizontal background shading
-    for i in range(len(df_sorted)):
-        row_alpha = 0.15 if i % 2 == 0 else 0.05
-        for ax in [ax_l, ax_r, ax_m]:
-            ax.axhspan(i - 0.4, i + 0.4, color="gray", alpha=row_alpha, zorder=0, lw=0)
-
-    # Overlap histogram
-    ax_l.barh(
-        range(len(df_sorted)),
-        -df_sorted["Overlap"],
-        color=row_colors,
-        edgecolor="black",
-        linewidth=1,
-        height=0.7,
-        zorder=3,
-    )
-    ax_l.set_xlim(right=0)
-    ax_l.set_xlabel("Overlap Proportion", fontsize=12, labelpad=10)
-    ax_l.xaxis.set_major_formatter(
-        ticker.FuncFormatter(lambda x, pos: "" if x == 0 else f"{abs(x):.2f}")
-    )
-
-    # -log10(FDR) plot
-    ax_r.scatter(
-        df_sorted["log10(FDR)"],
-        range(len(df_sorted)),
-        color=row_colors,
-        edgecolor="black",
-        linewidth=1,
-        s=30,
-        zorder=3,
-    )
-    ax_r.set_xlim(left=0, right=df_sorted["log10(FDR)"].max() + 1)
-
-    ax_r.set_xlabel(r"$-\log_{10}(\text{FDR-adj. p < 0.05})$", fontsize=12, labelpad=10)
-
-    # Y-labels
-    ax_l.set_yticks(range(len(df_sorted)))
-    ax_l.set_yticklabels(df_sorted["Term"], ha="right", fontsize=9)
-
-    # The shared spine in the middle
-    ax_l.spines["right"].set_visible(True)
-    ax_r.spines["left"].set_visible(True)
-
-    # Ensure a vertical line exists at x=0 for both
-    ax_l.axvline(0, color="black", linewidth=1, zorder=4)
-    ax_r.axvline(0, color="black", linewidth=1, zorder=4)
-
-    # Matrix Panel (Far Right)
-    for i, row in df_sorted.iterrows():
-        row_genes = str(row["Genes"]).split(";")
-        for j, gene in enumerate(unique_genes):
-            if gene in row_genes:
-                ax_m.scatter(
-                    j,
-                    i,
-                    color=row_colors[i],
-                    marker="s",
-                    s=50,
-                    edgecolor="black",
-                    linewidth=1,
-                    zorder=3,
-                )
-
-    # Alternating vertical background shading
-    for j in range(len(unique_genes)):
-        if j % 2 == 0:  # Only shades every other column
-            ax_m.axvspan(j - 0.5, j + 0.5, color="gray", alpha=0.08, zorder=0, lw=0)
-
-    # Configure the matrix
-    ax_m.set_xticks(range(len(unique_genes)))
-    ax_m.set_xticklabels(unique_genes, rotation=90, ha="center", fontsize=8)
-    ax_m.xaxis.tick_bottom()
-    ax_m.tick_params(axis="x", direction="inout", length=8, width=1)
-
-    # Lock the limits
-    ax_m.set_aspect("equal")
-    ax_m.set_xlim(-0.5, len(unique_genes) - 0.5)
-    ax_l.set_ylim(-1, len(df_sorted) - 0.5)
-
-    # Final cleanup
-    for ax in [ax_l, ax_r, ax_m]:
-        for spine in ["top", "right", "left", "bottom"]:
-            if ax == ax_m and spine == "top":
-                continue
-            if spine != "bottom":
-                ax.spines[spine].set_visible(False)
-
-        ax.tick_params(axis="y", left=False, right=False)
-
-    # Create legend
-    legend_handles = [
-        mpatches.Patch(
-            facecolor=db_color_map[db], edgecolor="black", linewidth=1, label=db
-        )
-        for db in sorted(db_color_map.keys())
-    ]
-
-    fig.legend(
-        handles=legend_handles,
-        loc="lower center",
-        bbox_to_anchor=(0.6, 0.99),
-        ncol=len(db_color_map),
-        frameon=False,
-        fontsize=10,
-        handlelength=1.2,
-        columnspacing=2.0,
-    )
-
-    plt.tight_layout()
-    plt.savefig(
-        f"{output_dir}/pleio__genes_enrichment_plot.pdf", dpi=600, bbox_inches="tight"
-    )
-
-
 if __name__ == "__main__":
 
     gtex_med_TPM_path = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/gtex/GTEx_expression/GTEx_Analysis_2025-08-22_v11_RNASeQCv2.4.3_gene_median_tpm.gct"
@@ -662,7 +667,7 @@ if __name__ == "__main__":
     output_dir = "/Users/sezgi/Documents/dominance_pleiotropy/gene_level/plots"
 
     # Intersection between MAGMA and eQTL
-    plot_intersection(all_genes_df, output_dir)
+    #plot_intersection(all_genes_df, output_dir)
 
     # Gene set enrichment for pleiotropic genes
     pleiotropic_pos_df = all_genes_df.groupby("gene_id_pos").filter(

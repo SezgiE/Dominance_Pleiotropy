@@ -9,11 +9,13 @@ library(openxlsx)
 rm(list = setdiff(ls(all.names = TRUE), c("all_sig_df", "clumped_df")))
 
 #  Load the data 
-merged_path <- "/Users/sezgi/Documents/dominance_pleiotropy/SNP_level/significant_SNPs/all_sig_SNPs.tsv.gz"
+merged_path <- "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/coloc_results/coloc_snp_info.tsv"
 coloc_merged <- fread(merged_path)
+
 
 max(coloc_merged$dom_sig_total)
 max(coloc_merged$add_sig_total)
+
 
 unqvar <- unique(coloc_merged$gene_id_eqtl)
 

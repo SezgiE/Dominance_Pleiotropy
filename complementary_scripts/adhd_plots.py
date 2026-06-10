@@ -329,7 +329,7 @@ def plot_beta_distributions(trend_res_path, trend_res_path_corr, output_dir):
                 
         ax.axvline(0, color='gray', linestyle='--', linewidth=0.8, alpha=0.7)
         ax.set_title(title, fontweight='bold', fontsize=12)
-        ax.set_xlabel("Beta Coefficient (99.72% CI)", labelpad=10)
+        ax.set_xlabel("Beta Coefficient (99.86% CI)", labelpad=10)
         
         # Panel lettering
         ax.text(-0.05 if panel_letter == 'B.' else -0.15, 1.05, panel_letter, 
@@ -412,9 +412,12 @@ def scale_combined_figure(trend_res_path, scale_trend_path, scale_trend_path_cor
     df = df.drop_duplicates(subset=['scale', 'rater', 'rated_age']).reset_index(drop=True)
     df['err_low'] = df['beta_bc'] - df['low_conf']
     df['err_up'] = df['up_conf'] - df['beta_bc']
+
+    baseline_sig_combos = df.set_index(['scale', 'rater', 'rated_age']).index
     
     # Process Corrected (df_corr)
-    df_corr = df_corr[(df_corr['significance'] == True)].copy()
+    corr_combos = df_corr.set_index(['scale', 'rater', 'rated_age']).index
+    df_corr = df_corr[(df_corr['significance'] == True) | (corr_combos.isin(baseline_sig_combos))].copy()
     df_corr = df_corr.drop_duplicates(subset=['scale', 'rater', 'rated_age']).reset_index(drop=True)
     df_corr['err_low'] = df_corr['beta_bc'] - df_corr['low_conf']
     df_corr['err_up'] = df_corr['up_conf'] - df_corr['beta_bc']
@@ -474,7 +477,7 @@ def scale_combined_figure(trend_res_path, scale_trend_path, scale_trend_path_cor
     
     panels = [
         (axes[1, 0], df, 'Unadjusted', 'C.'),
-        (axes[1, 1], df_corr, 'Adjusted for Parental EA and Age', 'D.')
+        (axes[1, 1], df_corr, 'Adjusted for Parental Age', 'D.')
     ]
     
     for ax, panel_df, title, panel_letter in panels:
@@ -494,15 +497,19 @@ def scale_combined_figure(trend_res_path, scale_trend_path, scale_trend_path_cor
                 age_val = int(row['rated_age'])
                 ls = age_linestyles.get(age_val, '-')
                 
+                is_sig = row.get('significance', True) 
+                point_alpha = 1.0 if is_sig else 0.6
+
                 eb = ax.errorbar(row['beta_bc'], i + offsets[j], 
                             xerr=[[row['err_low']], [row['err_up']]],
                             marker='o', linestyle='none', color=color, markersize=3.5, 
-                            elinewidth=1.0, capsize=0)
+                            elinewidth=1.0, capsize=0, alpha=point_alpha)
+                
                 eb[2][0].set_linestyle(ls)
                 
         ax.axvline(0, color='gray', linestyle='--', linewidth=0.8, alpha=0.7)
         ax.set_title(title, fontweight='bold', fontsize=10)
-        ax.set_xlabel("Beta Coefficient (95% CI)", labelpad=10)
+        ax.set_xlabel("Beta Coefficient (99.17% CI)", labelpad=10)
         ax.tick_params(axis='x', labelsize = 9)
 
         ax.set_xlim(-0.022, 0.002) 
@@ -519,6 +526,7 @@ def scale_combined_figure(trend_res_path, scale_trend_path, scale_trend_path_cor
     
     # Sync limits to ensure stripes perfectly align across the two bottom plots
     axes[1, 1].set_ylim(axes[1, 0].get_ylim()) 
+    axes[1, 0].set_xlim(axes[1, 1].get_xlim())
     
     axes[1, 1].tick_params(left=False) 
     axes[1, 1].spines['left'].set_visible(False)
@@ -649,6 +657,7 @@ def plot_parental_trends(scale_data_dir, parental_output):
     excel_path = os.path.join(os.path.dirname(parental_output), "parental_trends_descriptives.xlsx")
     trend_stats.to_excel(excel_path, index=False)
 
+
 #dorret
 def scale_panel_B(scale_data_dir, output_dir):
     os.makedirs(output_dir, exist_ok=True)
@@ -758,7 +767,7 @@ if __name__ == "__main__":
     output_dir = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/item_level_analyses"
     
     #plot_item_level_trends(item_data_dir, output_dir)
-    plot_beta_distributions(trend_res_path, trend_res_path_corr, output_dir)
+    #plot_beta_distributions(trend_res_path, trend_res_path_corr, output_dir)
     
     scale_trend_path = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/sum_score_analyses/model_results_SA/openmx_parameters_SA.xlsx"
     scale_trend_path_corr = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/sum_score_analyses/model_results_SA/corr/openmx_parameters_corr_SA.xlsx"
