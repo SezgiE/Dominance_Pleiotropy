@@ -27,7 +27,7 @@ def snp_desc(snp_info_path, sig_SNPs_path, phen_dict_path):
     df = df[df['minor_AF'] > 0.01]
     out['filter_MAF'] = df.groupby('chr').size()
 
-    df = df[df['p_hwe'] >= 1e-6]
+    df = df[df['p_hwe'] > 1e-6]
     out['filter_HWE'] = df.groupby('chr').size()
 
     df = df[df['info'] > 0.9]

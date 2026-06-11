@@ -156,7 +156,7 @@ def compile_significant_snps(input_dir, variant_info, output_dir, hwe_sig=1e-6, 
 
     # Apply HWE, INFO, Chromosome filters and remove INDELs and multi-allelic variants
     print("Applying filters: HWE p-value > 1e-6, info > 0.9, and removing sex chromosomes...")
-    var_info_HWE = var_info[var_info['p_hwe'] >= hwe_sig].copy()
+    var_info_HWE = var_info[var_info['p_hwe'] > hwe_sig].copy()
     print(f"removed {len(var_info) - len(var_info_HWE)} variants based on HWE p-value threshold of {hwe_sig}. Remaining: {len(var_info_HWE)}.")
     var_info_HEW_INFO = var_info_HWE[var_info_HWE['info'] > info_threshold].copy()
     print(f"removed {len(var_info_HWE) - len(var_info_HEW_INFO)} variants based on INFO score threshold of {info_threshold}. Remaining: {len(var_info_HEW_INFO)}.")

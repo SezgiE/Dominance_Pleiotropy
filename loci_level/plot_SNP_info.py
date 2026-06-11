@@ -484,7 +484,7 @@ def plot_effect_direction(df_path, all_snps_df, output_filename):
     ax_B.bar(
         x_pos+0.1, snp_stats['dom_sig_count'], 
         width=0.5, color='#E64B35', alpha=0.8, 
-        edgecolor='black', linewidth=0.2, label='Dominant', zorder=3
+        edgecolor='black', linewidth=0.2, label='Dominance', zorder=3
     )
     
     ax_B.axhline(0, color='black', linewidth=1.0, zorder=1)
@@ -581,6 +581,6 @@ if __name__ == "__main__":
     coloc_snps_info = "/Users/sezgi/Documents/dominance_pleiotropy/loci_level/coloc_results/coloc_snp_info.tsv"
     out_dir="/Users/sezgi/Documents/dominance_pleiotropy/loci_level/loci_results" 
 
-    upset_plot(coloc_snps, f"{out_dir}/vep_res.txt", out_dir)
+    #upset_plot(coloc_snps, f"{out_dir}/vep_res.txt", out_dir)
     #snp_3D_plot(coloc_snps_info, f"{out_dir}/snp_maf.pdf")
-    #plot_effect_direction(coloc_snps_info, all_snps_df, f"{out_dir}/snps_effect_direction.pdf")
+    plot_effect_direction(coloc_snps_info, all_snps_df, f"{out_dir}/snps_effect_direction.pdf")
