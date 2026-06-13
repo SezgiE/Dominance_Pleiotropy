@@ -1,0 +1,22 @@
+# python
+python== 3.13
+gseapy==1.2.1
+matplotlib==3.10.9
+matplotlib_venn==1.1.2
+numpy==2.4.6
+pandas==3.0.3
+pyreadr==0.5.6
+s3fs==2026.2.0
+scipy==1.17.1
+seaborn==0.13.2
+statsmodels==0.14.6
+upsetplot==0.9.0
+
+# R
+R==4.4.2
+susieR==0.14.2
+dplyr==1.2.0
+tidyverse==2.0.0
+data.table==1.18.2.1
+biomaRt==2.62.1
+coloc==5.2.3
