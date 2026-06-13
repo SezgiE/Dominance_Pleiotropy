@@ -1,3 +1,4 @@
+from ast import For
 import os
 import re
 import glob
@@ -475,20 +476,25 @@ def scale_combined_figure(trend_res_path, scale_trend_path, scale_trend_path_cor
     rater_colors = {"m": "#3C5488", "f": "#F39B7F", "t": "#00A087"}
     age_linestyles = {7: '-', 10: '--', 12: ':'}
     
-    panels = [
-        (axes[1, 0], df, 'Unadjusted', 'C.'),
-        (axes[1, 1], df_corr, 'Adjusted for Parental Age', 'D.')
+    # Define the panels by scale rather than by adjustment status
+    panels_beta = [
+        (axes[1, 0], 'emp', 'AP Scale', 'C.'),
+        (axes[1, 1], 'dsm', 'ADHP Scale', 'D.')
     ]
     
-    for ax, panel_df, title, panel_letter in panels:
-        # Alternating background stripes
-        for i in range(len(scales)):
+    # Set the y-axis categories and map them to their respective dataframes
+    model_labels = ['Unadjusted', 'Adjusted for\nParental Age']
+    model_dfs = [df, df_corr]
+    
+    for ax, scale_name, title, panel_letter in panels_beta:
+        # Alternating background stripes for the two y-axis positions
+        for i in range(len(model_labels)):
             if i % 2 == 0:
                 ax.axhspan(i - 0.5, i + 0.5, color='gray', alpha=0.05, zorder=0)
                 
-
-        for i, scale_name in enumerate(scales):
-            subset = panel_df[panel_df['scale'] == scale_name]
+        for i, model_df in enumerate(model_dfs):
+            # Filter the current dataframe for the current panel's scale
+            subset = model_df[model_df['scale'] == scale_name]
             n_points = len(subset)
             offsets = np.linspace(-0.3, 0.3, n_points) if n_points > 1 else [0]
             
@@ -510,27 +516,30 @@ def scale_combined_figure(trend_res_path, scale_trend_path, scale_trend_path_cor
         ax.axvline(0, color='gray', linestyle='--', linewidth=0.8, alpha=0.7)
         ax.set_title(title, fontweight='bold', fontsize=10)
         ax.set_xlabel("Beta Coefficient (99.17% CI)", labelpad=10)
-        ax.tick_params(axis='x', labelsize = 9)
+        ax.tick_params(axis='x', labelsize=9)
 
         ax.set_xlim(-0.022, 0.002) 
         ax.set_xticks([-0.020, -0.015, -0.010, -0.005, 0.000])
+        ax.grid(True, axis='x', color='gray', linestyle='--', linewidth=0.5, alpha=0.3)
 
+        # Invert so 'Unadjusted' (index 0) stays at the top
         ax.invert_yaxis()
         
         # Panel lettering
         ax.text(-0.05 if panel_letter == 'D.' else -0.1, 1.05, panel_letter, 
                 transform=ax.transAxes, size=12, weight='bold', va='bottom', ha='right')
 
-    axes[1, 0].set_yticks(range(len(scales)))
-    axes[1, 0].set_yticklabels([scale_labels[s] for s in scales])
+    # Apply the unadjusted/adjusted text labels to the left panel
+    axes[1, 0].set_yticks(range(len(model_labels)))
+    axes[1, 0].set_yticklabels(model_labels, rotation=90, va='center')
     
     # Sync limits to ensure stripes perfectly align across the two bottom plots
     axes[1, 1].set_ylim(axes[1, 0].get_ylim()) 
     axes[1, 0].set_xlim(axes[1, 1].get_xlim())
     
+    # Remove borders and numbers between C and D
     axes[1, 1].tick_params(left=False) 
     axes[1, 1].spines['left'].set_visible(False)
-
     axes[1, 1].set_yticks(axes[1, 0].get_yticks())
     axes[1, 1].set_yticklabels([])
     
@@ -658,6 +667,143 @@ def plot_parental_trends(scale_data_dir, parental_output):
     trend_stats.to_excel(excel_path, index=False)
 
 
+def plot_hertiability_trends(parameters_df_path, output_dir):
+
+    df = pd.read_excel(f"{parameters_df_path}/ADE_parameters_corr_SA.xlsx", usecols=["Scale", "Rater", "Age", "Model", "Birth.cohort", "std_varA", "std_varD"])
+    df['Age'] = df['Age'].astype(int) 
+
+    # Pre-define models
+    selection_rules = [
+        # Mother
+        {"Scale": "AP", "Rater": "Mother", "Age": 7, "Model": "OM"},
+        {"Scale": "AP", "Rater": "Mother", "Age": 10, "Model": "OM"},
+        {"Scale": "AP", "Rater": "Mother", "Age": 12, "Model": "ADE"},
+        
+        {"Scale": "ADHP", "Rater": "Mother", "Age": 7, "Model": "E"},
+        {"Scale": "ADHP", "Rater": "Mother", "Age": 10, "Model": "E"},
+        {"Scale": "ADHP", "Rater": "Mother", "Age": 12, "Model": "E"},
+        
+        # Father
+        {"Scale": "AP", "Rater": "Father", "Age": 7, "Model": "E"},
+        {"Scale": "AP", "Rater": "Father", "Age": 10, "Model": "E"},
+        {"Scale": "AP", "Rater": "Father", "Age": 12, "Model": "OM"},
+        
+        {"Scale": "ADHP", "Rater": "Father", "Age": 7, "Model": "E"},
+        {"Scale": "ADHP", "Rater": "Father", "Age": 10, "Model": "OM"},
+        {"Scale": "ADHP", "Rater": "Father", "Age": 12, "Model": "OM"},
+        
+        # Teacher
+        {"Scale": "AP", "Rater": "Teacher", "Age": 7, "Model": "OM"},
+        {"Scale": "AP", "Rater": "Teacher", "Age": 10, "Model": "OM"},
+        {"Scale": "AP", "Rater": "Teacher", "Age": 12, "Model": "OM"},
+        
+        {"Scale": "ADHP", "Rater": "Teacher", "Age": 7, "Model": "OM"},
+        {"Scale": "ADHP", "Rater": "Teacher", "Age": 10, "Model": "OM"},
+        {"Scale": "ADHP", "Rater": "Teacher", "Age": 12, "Model": "AD"}
+    ]
+
+    # Convert the rules into a DataFrame
+    rules_df = pd.DataFrame(selection_rules)
+
+    # Filter
+    filtered_df = pd.merge(df, rules_df, on=["Scale", "Rater", "Age", "Model"], how="inner")
+
+    # Calculate Broad Sense Heritability (H^2)
+    filtered_df['H2'] = filtered_df['std_varA'] + filtered_df['std_varD']
+
+    # Styling parameters
+    rater_colors = {"mother": "#3C5488", "father": "#F39B7F", "teacher": "#00A087", 
+                    "m": "#3C5488", "f": "#F39B7F", "t": "#00A087"}
+    age_linestyles = {7: '-', 10: '--', 12: ':'}
+    
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4), gridspec_kw={'wspace': 0.15})
+    
+    # Define the panels by scale
+    panels_h2 = [
+        (axes[0], 'AP', 'AP Scale', 'A.'),
+        (axes[1], 'ADHP', 'ADHP Scale', 'B.')
+    ]
+
+    for ax, scale_name, title, panel_letter in panels_h2:
+        # Filter dataframe for the current scale
+        subset = filtered_df[filtered_df['Scale'].astype(str).str.upper() == scale_name.upper()]
+        
+        # Group by Rater and Age to plot continuous lines across birth cohorts
+        if not subset.empty:
+            for (rater, age), group in subset.groupby(['Rater', 'Age']):
+                # chronological order
+                group = group.sort_values(by='Birth.cohort') 
+                
+                color = rater_colors.get(str(rater).lower(), '#333333')
+                ls = age_linestyles.get(int(age), '-')
+                
+                # Determine prominence based on the selected Model
+                current_model = group['Model'].iloc[0]
+                
+                if current_model == "OM":
+                    line_width = 1.0
+                    marker_size=2.5
+                    plot_color = "lightgrey"  # Strip color from background models
+                    line_zorder = 1           
+                else:
+                    line_width = 1.5
+                    marker_size=3.5
+                    plot_color = rater_colors.get(str(rater).lower(), '#333333') # Full color for target models
+                    line_zorder = 3           
+                
+                # Plot the line and points using plot_color
+                ax.plot(group['Birth.cohort'], group['H2'], 
+                        color=plot_color, linestyle=ls, linewidth=line_width, 
+                        marker='o', markersize=marker_size, alpha=0.9, zorder=line_zorder)
+
+        # Formatting
+        ax.set_title(title, fontweight='bold', fontsize=10)
+        ax.set_xlabel("Birth Cohort", labelpad=10)
+        ax.tick_params(axis='both', labelsize=9)
+        
+        # Clean up borders
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        
+        # Subtle horizontal grid
+        ax.grid(True, axis='y', color='gray', linestyle='--', linewidth=0.5, alpha=0.3)
+        ax.grid(False, axis='x')
+
+        # Y-axis labeling and syncing
+        if panel_letter == 'A.':
+            ax.set_ylabel("Broad Sense Heritability ($H^2$)", labelpad=10)
+        else:
+            ax.set_ylabel("")
+            
+        # Panel lettering
+        ax.text(-0.15 if panel_letter == 'A.' else -0.05, 1.05, panel_letter, 
+                transform=ax.transAxes, size=12, weight='bold', va='bottom', ha='right')
+
+
+    for ax in axes:
+        ax.set_ylim(0.45, 1)
+        ax.set_yticks([0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
+
+
+    # Unified legends attached to the figure at the bottom
+    custom_lines_rater = [Line2D([0], [0], color=c, marker='o', lw=1.5, markersize=4) for c in ["#3C5488", "#F39B7F", 
+                                                                                                "#00A087", "lightgrey"]]
+    l1 = fig.legend(custom_lines_rater, ['Mother', 'Father', 'Teacher', "No Trend"], title="Respondent", 
+                    frameon=False, bbox_to_anchor=(0.35, -0.05), loc='upper center', ncol=4,
+                    fontsize=8, title_fontsize=9, handletextpad=0.4, columnspacing=1.0)
+              
+    custom_lines_age = [Line2D([0], [0], color='gray', linestyle=ls, lw=1.5) for ls in age_linestyles.values()] 
+    l2 = fig.legend(custom_lines_age, ['7', '10', '12'], title="Assessment Age", 
+                    frameon=False, bbox_to_anchor=(0.65, -0.05), loc='upper center', ncol=3,
+                    fontsize=8, title_fontsize=9, handletextpad=0.4, columnspacing=1.0)
+
+    # Adjust layout so legends are not clipped
+    plt.tight_layout(rect=[0, 0.08, 1, 1]) 
+    
+    out_path = os.path.join(output_dir, "heritability_trend.pdf")
+    plt.savefig(out_path, format='pdf', transparent=True, bbox_inches='tight')
+
+
 #dorret
 def scale_panel_B(scale_data_dir, output_dir):
     os.makedirs(output_dir, exist_ok=True)
@@ -779,5 +925,10 @@ if __name__ == "__main__":
     # Parental EA and Age plotting
     parental_output = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/EA_QualityControl/trend_age/parental_trend.pdf"
     #plot_parental_trends(scale_data_dir, parental_output)
+
+    # Heritability plotting
+    parameters_dir = "/Users/sezgi/Library/Mobile Documents/com~apple~CloudDocs/ADHD_paper/analyses/sum_score_analyses/ADE_model_Results_SA/corr"
+     
+    plot_hertiability_trends(parameters_dir, parameters_dir)
 
     
